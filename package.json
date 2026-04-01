@@ -1,0 +1,27 @@
+{
+  "name": "@rb-mwindh/git-bundle",
+  "version": "0.0.0",
+  "description": "",
+  "author": "Markus Windhager",
+  "license": "MIT",
+  "private": true,
+  "keywords": [
+  ],
+  "type": "module",
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rb-mwindh/git-bundle.git"
+  },
+  "homepage": "https://github.com/rb-mwindh/git-bundle",
+  "bugs": {
+    "url": "https://github.com/rb-mwindh/git-bundle/issues"
+  }
+}

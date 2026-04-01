@@ -1,0 +1,5 @@
+node_modules/
+
+# bin/ and bin/node_modules are committed and stay in the repo
+!bin/
+!bin/node_modules/
