@@ -1,0 +1,43 @@
+name: Update floating tags
+
+on:
+  workflow_run:
+    workflows: ["Release Pipeline"]
+    types: [completed]
+
+permissions:
+  contents: write  # needed to push tags
+
+jobs:
+  floating-tags:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Update floating tags (v<major>, v<major>.<minor>)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
+          
+          version="${latest#v}"
+          major="${version%%.*}" # 1.2.3 -> 1
+          minor="${version%.*}" # 1.2.3 -> 1.2
+          
+          echo "Latest version tag: ${latest}"
+          echo "Updating floating major tag: v${major} -> ${latest}"
+          echo "Updating floating minor tag: v${minor} -> ${latest}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Force-move v<major> and v<minor> to point at vX.Y.Z
+          git tag -f "v${major}" "${latest}"
+          git tag -f "v${minor}" "${latest}"
+          git push origin -f "v${major}" "v${minor}"
