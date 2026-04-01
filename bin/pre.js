@@ -278,7 +278,7 @@ var repo = new Repo();
 
 // src/pre.ts
 (async () => {
-  const bundleName = core2.getInput("bundle", { required: true });
+  const bundleName = core2.getInput("bundle", { required: false }) || "release";
   await repo.pre(bundleName);
 })().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
