@@ -1,12 +1,11 @@
 {
   "name": "@rb-mwindh/git-bundle",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "",
   "author": "Markus Windhager",
   "license": "MIT",
   "private": true,
-  "keywords": [
-  ],
+  "keywords": [],
   "type": "module",
   "files": [
     "bin",
