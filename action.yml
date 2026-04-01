@@ -1,0 +1,18 @@
+name: Git Bundle
+description: Transport git changes via bundles across jobs without pushing to remote
+author: Markus Windhager
+
+branding:
+  icon: package
+  color: orange
+
+inputs:
+  bundle:
+    description: "Bundle artifact identifier (required). Used for: bundle filename <bundle>.bundle, artifact name <bundle>, and ref refs/head/<bundle>"
+    required: true
+
+runs:
+  using: 'node20'
+  pre: 'bin/pre.js'
+  main: 'bin/main.js'
+  post: 'bin/post.js'

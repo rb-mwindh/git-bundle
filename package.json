@@ -23,5 +23,23 @@
   "homepage": "https://github.com/rb-mwindh/git-bundle",
   "bugs": {
     "url": "https://github.com/rb-mwindh/git-bundle/issues"
+  },
+  "dependencies": {
+    "@actions/artifact": "^6.1.0",
+    "@actions/core": "^3.0.0",
+    "@actions/github": "^9.0.0",
+    "semantic-release": "^24",
+    "simple-git": "^3.31.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.0.10",
+    "cpy-cli": "^7.0.0",
+    "esbuild": "^0.27.3",
+    "esbuild-plugin-license": "^1.2.3",
+    "jest": "^30.2.0",
+    "npm-run-all2": "^8.0.4",
+    "ts-jest": "^29.4.6",
+    "tsx": "^4.21.0"
   }
 }
