@@ -25,6 +25,7 @@
     "url": "https://github.com/rb-mwindh/git-bundle/issues"
   },
   "scripts": {
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "build": "run-s build:*",
     "build:esbuild": "tsx esbuild.config.ts",
     "build:copy-package": "cpy package*.json bin",
