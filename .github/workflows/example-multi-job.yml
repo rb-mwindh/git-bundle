@@ -26,6 +26,8 @@ jobs:
 
       - name: Create release
         run: |
+          git config user.name "Test User"
+          git config user.email "test@example.com"
           git commit --allow-empty -m "1"
           git commit --allow-empty -m "2"
           git tag v${VERSION}
@@ -48,6 +50,8 @@ jobs:
 
       - name: Run build
         run: |
+          git config user.name "Test User"
+          git config user.email "test@example.com"
           git commit --allow-empty -m "3"
           git tag -f v${{needs.prepare.outputs.version}}
 
