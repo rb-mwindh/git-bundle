@@ -29,7 +29,7 @@
     "build": "run-s build:*",
     "build:esbuild": "tsx esbuild.config.ts",
     "build:copy-package": "cpy package*.json bin",
-    "build:install-dependencies": "npm ci --include=prod --ignore-scripts --prefix bin",
+    "build:install-dependencies": "npm ci --omit dev --ignore-scripts --prefix bin",
     "build:clean-package": "node -e \"const {rmSync}=require('node:fs'); ['bin/package.json','bin/package-lock.json'].forEach((file)=>rmSync(file,{force:true}));\""
   },
   "dependencies": {
