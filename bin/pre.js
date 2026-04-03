@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v0.0.0 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.1 | MIT */
 
 // src/pre.ts
 import * as core2 from "@actions/core";
@@ -49,7 +49,7 @@ var Repo = class _Repo {
       `Saved PRE snapshot with ${Object.keys(snapshot.tags).length} tag refs and ${Object.keys(snapshot.notes).length} note refs.`
     );
   }
-  async main(bundleName) {
+  async noop(bundleName) {
     core.debug(`Main phase is a no-op for bundle "${bundleName}".`);
   }
   async post(bundleName) {
@@ -111,7 +111,7 @@ var Repo = class _Repo {
       const bundlePath = path.join(downloadResult.downloadPath ?? this.runnerTempDir, `${bundleName}.bundle`);
       const bundleRefs = await this.listBundleRefs(bundlePath);
       if (bundleRefs.length === 0) {
-        core.notice(`No valid bundle found in artifact "${name}". Import is skipped.`);
+        core.notice(`No valid bundle found in artifact "${bundleName}". Import is skipped.`);
         return;
       }
       for (const ref of bundleRefs) {
@@ -279,7 +279,7 @@ var repo = new Repo();
 // src/pre.ts
 (async () => {
   const bundleName = core2.getInput("bundle", { required: false }) || "release";
-  await repo.pre(bundleName);
+  await repo.noop(bundleName);
 })().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
   core2.setFailed(message);

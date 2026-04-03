@@ -1,3 +1,10 @@
+# [1.0.0-rc.2](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-04-03)
+
+
+### Features
+
+* **action:** use `main` instead of `pre` ([c626206](https://github.com/rb-mwindh/git-bundle/commit/c626206137cdf3b9c24da4a2c644321210b77ab7))
+
 # 1.0.0-rc.1 (2026-04-03)
 
 
