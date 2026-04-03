@@ -61,7 +61,7 @@ export class Repo {
     );
   }
 
-  async main(bundleName: string): Promise<void> {
+  async noop(bundleName: string): Promise<void> {
     core.debug(`Main phase is a no-op for bundle "${bundleName}".`);
   }
 
@@ -139,7 +139,7 @@ export class Repo {
       const bundleRefs = await this.listBundleRefs(bundlePath);
 
       if (bundleRefs.length === 0) {
-        core.notice(`No valid bundle found in artifact "${name}". Import is skipped.`);
+        core.notice(`No valid bundle found in artifact "${bundleName}". Import is skipped.`);
         return;
       }
 
