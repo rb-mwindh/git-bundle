@@ -1,5 +1,5 @@
 name: Git Bundle
-description: Transport git changes via bundles across jobs without pushing to remote
+description: Restore and persist Git state across jobs by exchanging Git bundles as artifacts
 author: Markus Windhager
 
 branding:
@@ -8,11 +8,19 @@ branding:
 
 inputs:
   bundle:
-    description: "Bundle artifact identifier (required). Used for: bundle filename <bundle>.bundle, artifact name <bundle>, and ref refs/head/<bundle>"
-    required: true
+    description: "Optional bundle identifier. Used as the artifact name, bundle file name, and transport ref suffix in refs/heads/<bundle>."
+    default: "release"
+  path:
+    description: "Optional path to the Git repository. Defaults to the GitHub workspace and falls back to the current working directory at runtime."
+    default: "${{ github.workspace }}"
+  refs:
+    description: "Optional comma-separated list of tracked ref patterns to fetch, snapshot, and include in the bundle (for example refs/tags/*,refs/notes/*)."
+    default: "refs/tags/*,refs/notes/*"
+  tempDir:
+    description: "Optional temporary directory for downloaded artifacts, generated bundle files, and uploads."
+    default: "${{ runner.temp }}"
 
 runs:
   using: 'node20'
-  pre: 'bin/pre.js'
   main: 'bin/main.js'
   post: 'bin/post.js'

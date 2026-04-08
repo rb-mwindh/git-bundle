@@ -1,10 +1,7 @@
 import * as core from '@actions/core';
-import {repo} from './lib/repo.js';
+import {GitBundleAction} from './lib/git-bundle-action.js';
 
-(async () => {
-  const bundleName = core.getInput('bundle', {required: false}) || 'release';
-  await repo.post(bundleName);
-})().catch((error: unknown) => {
+new GitBundleAction().post().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  core.warning(`POST execution failed: ${message}`);
+  core.setFailed(message);
 });
