@@ -65,21 +65,6 @@ function licensePlugin(bundle: string) {
 }
 
 await Promise.all([
-    // build({
-    //     ...options,
-    //     entryPoints: ['./src/cli.ts'],
-    //     outfile: 'bin/cli.js',
-    //     external: externalDeps,
-    //     banner: {js: '#!/usr/bin/env node\n'},
-    //     plugins: [licensePlugin('cli.js')],
-    // }),
-    build({
-        ...options,
-        entryPoints: ['./src/pre.ts'],
-        outfile: 'bin/pre.js',
-        external: externalDeps,
-        plugins: [licensePlugin('pre.js')],
-    }),
     build({
         ...options,
         entryPoints: ['./src/main.ts'],
