@@ -1,3 +1,15 @@
+# [1.0.0-rc.3](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.2...v1.0.0-rc.3) (2026-04-08)
+
+
+### Features
+
+* **git-bundle:** reimplement bundle workflow with layered action and API classes ([b54e1dc](https://github.com/rb-mwindh/git-bundle/commit/b54e1dc6dc1c91cba968839b3282e797af8fa04d))
+
+
+### BREAKING CHANGES
+
+* **git-bundle:** Just want to bump the major version
+
 # [1.0.0-rc.2](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-04-03)
 
 
