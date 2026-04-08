@@ -263,7 +263,7 @@ var Repo = class _Repo {
     }
   }
   getTransportRef(bundleName) {
-    return `refs/head/${bundleName}`;
+    return `refs/heads/${bundleName}`;
   }
   async fileExists(filePath) {
     try {

@@ -1,159 +1,177 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.1 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.2 | MIT */
 
 // src/post.ts
-import * as core2 from "@actions/core";
-
-// src/lib/repo.ts
 import * as core from "@actions/core";
-import artifact from "@actions/artifact";
-import * as github from "@actions/github";
-import * as fs from "node:fs/promises";
+
+// src/lib/git-bundle-action.ts
 import * as os from "node:os";
 import * as path from "node:path";
+
+// src/lib/format-date.ts
+function formatDate(d) {
+  if (!d) {
+    return "unknown";
+  }
+  return new Date(d).toLocaleString("en-US", { dateStyle: "long" });
+}
+
+// src/lib/format-file-size.ts
+function formatFileSize(sizeInBytes, fractionDigits = 1) {
+  if (!Number.isFinite(sizeInBytes) || sizeInBytes < 0) {
+    throw new Error("sizeInBytes must be a non-negative finite number");
+  }
+  if (sizeInBytes === 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeInBytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const digits = unitIndex === 0 ? 0 : fractionDigits;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+// src/lib/github-api.ts
+import artifactClient from "@actions/artifact";
+import { context } from "@actions/github";
+import { join } from "node:path";
+import {
+  debug,
+  getInput,
+  getState,
+  info,
+  notice,
+  saveState,
+  setFailed,
+  setOutput,
+  warning
+} from "@actions/core";
+var GithubApi = class {
+  getInput(name, options) {
+    return getInput(name, options);
+  }
+  getState(name) {
+    return getState(name);
+  }
+  saveState(name, value) {
+    saveState(name, value);
+  }
+  setOutput(name, value) {
+    setOutput(name, value);
+  }
+  setFailed(message) {
+    setFailed(message);
+  }
+  debug(message) {
+    debug(message);
+  }
+  info(message) {
+    info(message);
+  }
+  notice(message, properties) {
+    notice(message, properties);
+  }
+  warning(message, properties) {
+    warning(message, properties);
+  }
+  getContextSha() {
+    return context.sha;
+  }
+  async listArtifacts() {
+    return artifactClient.listArtifacts({ latest: true });
+  }
+  async getArtifact(name) {
+    const result = await this.listArtifacts();
+    return result.artifacts.find((artifact) => artifact.name === name) ?? null;
+  }
+  async downloadArtifact(artifact, targetDir) {
+    const result = await artifactClient.downloadArtifact(artifact.id, { path: targetDir });
+    if (!result?.downloadPath) {
+      throw new Error(`Artifact download returned no path for "${artifact.name}".`);
+    }
+    return join(result.downloadPath, artifact.name);
+  }
+  async uploadArtifact(name, files, rootDirectory, options) {
+    return artifactClient.uploadArtifact(name, files, rootDirectory, options);
+  }
+  async deleteArtifact(artifactName, options) {
+    return artifactClient.deleteArtifact(artifactName, options);
+  }
+};
+
+// src/lib/git-api.ts
 import { simpleGit } from "simple-git";
-var Repo = class _Repo {
+import * as fs from "node:fs/promises";
+var DEFAULT_TRACKED_REFS = ["refs/tags/*", "refs/notes/*"];
+var GitApi = class {
   git;
-  cwd;
-  runnerTempDir;
-  stateKeys = {
-    githubSha: "git-bundle-github-sha",
-    snapshot: "git-bundle-snapshot"
-  };
-  constructor(workspaceDir = _Repo.resolveWorkspaceDir(), runnerTempDir = _Repo.resolveRunnerTempDir()) {
-    this.cwd = workspaceDir;
-    this.runnerTempDir = runnerTempDir;
-    this.git = simpleGit(this.cwd);
+  constructor(repoPathOrClient) {
+    this.git = typeof repoPathOrClient === "string" ? simpleGit(repoPathOrClient) : repoPathOrClient;
   }
-  static resolveWorkspaceDir() {
-    const githubWorkspace = process.env["GITHUB_WORKSPACE"]?.trim();
-    if (githubWorkspace) {
-      return path.resolve(githubWorkspace);
+  /**
+   * Returns true if the working directory is inside a Git repository.
+   */
+  async checkIsRepo() {
+    return this.git.checkIsRepo();
+  }
+  /**
+   * Returns true when the repository is shallow.
+   */
+  async isShallowRepository() {
+    const shallowValue = (await this.git.revparse(["--is-shallow-repository"])).trim();
+    return shallowValue === "true";
+  }
+  /**
+   * Converts tracked refs into force-fetch refspecs.
+   */
+  buildFetchRefSpecs(trackedRefs = DEFAULT_TRACKED_REFS) {
+    return trackedRefs.map((ref) => `+${ref}:${ref}`);
+  }
+  /**
+   * Performs a regular force-fetch from origin.
+   */
+  async fetch(fetchRefSpecs = []) {
+    return this.git.fetch(["--force", "origin", ...fetchRefSpecs]);
+  }
+  /**
+   * Performs an unshallow force-fetch from origin.
+   */
+  async fetchUnshallow(fetchRefSpecs = []) {
+    return this.git.fetch(["--force", "--unshallow", "origin", ...fetchRefSpecs]);
+  }
+  /**
+   * Imports a Git bundle file by fetching its refs into the local repository,
+   * then checks out the transported head commit.
+   * Returns skipped=true if the bundle contains no valid refs.
+   */
+  async importBundle(bundlePath, transportRef) {
+    const bundleRefs = await this.listBundleRefs(bundlePath);
+    if (bundleRefs.length === 0) {
+      return { bundleRefs: [], skipped: true };
     }
-    return process.cwd();
-  }
-  static resolveRunnerTempDir() {
-    const runnerTemp = process.env["RUNNER_TEMP"]?.trim();
-    if (runnerTemp) {
-      return path.resolve(runnerTemp);
+    const fetchResult = await this.git.fetch([bundlePath, ...bundleRefs]);
+    const transportedHead = await this.resolveRef(transportRef);
+    if (!transportedHead) {
+      throw new Error(`Required ref "${transportRef}" could not be resolved after bundle import.`);
     }
-    return os.tmpdir();
+    await this.git.checkout(["--force", transportedHead]);
+    return { bundleRefs, skipped: false, fetchRaw: fetchResult.raw, transportedHead };
   }
-  async pre(bundleName) {
-    await this.ensureRepository();
-    await this.ensureDeepFetched();
-    await this.downloadAndImportBundleIfPresent(bundleName);
-    const snapshot = await this.createSnapshot();
-    core.saveState(this.stateKeys.snapshot, JSON.stringify(snapshot));
-    core.saveState(this.stateKeys.githubSha, github.context.sha);
-    core.info(
-      `Saved PRE snapshot with ${Object.keys(snapshot.tags).length} tag refs and ${Object.keys(snapshot.notes).length} note refs.`
-    );
-  }
-  async noop(bundleName) {
-    core.debug(`Main phase is a no-op for bundle "${bundleName}".`);
-  }
-  async post(bundleName) {
-    await this.ensureRepository();
-    const githubSha = core.getState(this.stateKeys.githubSha) || github.context.sha;
-    const previousSnapshot = this.readSavedSnapshot();
-    const currentSnapshot = await this.createSnapshot();
-    const changedRefs = this.diffSnapshots(previousSnapshot, currentSnapshot);
-    const headSha = await this.getHeadSha();
-    const transportRef = this.getTransportRef(bundleName);
-    await this.updateRef(transportRef, headSha);
-    const commitCount = await this.getCommitCountSince(githubSha, transportRef);
-    const outputDir = this.runnerTempDir;
-    const bundlePath = path.join(outputDir, `${bundleName}.bundle`);
-    const revisionSpecs = this.buildRevisionSpecs({
-      githubSha,
-      transportRef,
-      changedRefs,
-      commitCount
-    });
-    const bundleCreated = await this.tryCreateBundle(bundlePath, revisionSpecs);
-    if (bundleCreated) {
-      await this.uploadArtifact(bundleName, [bundlePath], outputDir);
-    } else {
-      core.notice(`No new bundle content for "${bundleName}". Artifact upload is skipped.`);
-    }
-    core.info(
-      `POST completed. commitsSinceContextSha=${commitCount}, changedRefs=${changedRefs.length}, bundleCreated=${bundleCreated}`
-    );
-  }
-  async ensureRepository() {
-    const isRepo = await this.git.checkIsRepo();
-    if (!isRepo) {
-      throw new Error("Git repository not found. Run actions/checkout before git-bundle.");
-    }
-  }
-  async ensureDeepFetched() {
-    const isShallow = (await this.git.revparse(["--is-shallow-repository"])).trim() === "true";
-    if (!isShallow) {
-      await this.git.fetch(["--tags"]);
-      return;
-    }
-    core.info("Repository is shallow. Fetching complete history...");
-    try {
-      await this.git.fetch(["--unshallow", "--tags"]);
-      return;
-    } catch (error) {
-      core.warning(
-        `--unshallow failed: ${error instanceof Error ? error.message : String(error)}. Repository may remain shallow.`
-      );
-    }
-  }
-  async downloadAndImportBundleIfPresent(bundleName) {
-    try {
-      const artifactResult = await artifact.getArtifact(bundleName);
-      const downloadResult = await artifact.downloadArtifact(artifactResult.artifact.id, {
-        path: this.runnerTempDir
-      });
-      const bundlePath = path.join(downloadResult.downloadPath ?? this.runnerTempDir, `${bundleName}.bundle`);
-      const bundleRefs = await this.listBundleRefs(bundlePath);
-      if (bundleRefs.length === 0) {
-        core.notice(`No valid bundle found in artifact "${bundleName}". Import is skipped.`);
-        return;
-      }
-      for (const ref of bundleRefs) {
-        await this.fetchBundleRef(bundlePath, ref);
-      }
-      const transportedHead = await this.resolveRef(this.getTransportRef(bundleName));
-      if (transportedHead) {
-        await this.git.checkout(["--force", transportedHead]);
-        core.info(`Checked out transported HEAD ${transportedHead.slice(0, 7)}.`);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.toLowerCase().includes("not found")) {
-        core.notice(`No previous artifact named "${bundleName}" was found.`);
-        return;
-      }
-      core.warning(`Previous bundle import skipped: ${message}`);
-    }
-  }
-  async createSnapshot() {
-    return {
-      tags: await this.listRefs("refs/tags"),
-      notes: await this.listRefs("refs/notes")
-    };
-  }
-  readSavedSnapshot() {
-    const raw = core.getState(this.stateKeys.snapshot);
-    if (!raw) {
-      return { tags: {}, notes: {} };
-    }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return { tags: {}, notes: {} };
-    }
-  }
-  async listRefs(prefix) {
+  /**
+   * Creates a snapshot of all current refs matching the given prefixes as a flat ref→sha map.
+   */
+  async createSnapshot(trackedRefs = DEFAULT_TRACKED_REFS) {
     const refs = {};
     try {
-      const output = await this.git.raw(["for-each-ref", "--format=%(objectname) %(refname)", prefix]);
-      const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
-      for (const line of lines) {
+      const output = await this.git.raw([
+        "for-each-ref",
+        "--format=%(objectname) %(refname)",
+        ...trackedRefs
+      ]);
+      for (const line of output.split("\n").map((l) => l.trim()).filter(Boolean)) {
         const [sha, ref] = line.split(/\s+/, 2);
         if (sha && ref) {
           refs[ref] = sha;
@@ -163,19 +181,147 @@ var Repo = class _Repo {
     }
     return refs;
   }
+  /**
+   * Returns the SHA of the current HEAD commit.
+   */
+  async getHeadSha() {
+    return (await this.git.revparse(["HEAD"])).trim();
+  }
+  /**
+   * Updates a Git ref to point to the given commit SHA.
+   */
+  async updateRef(ref, sha) {
+    await this.git.raw(["update-ref", ref, sha]);
+  }
+  /**
+   * Returns the number of commits reachable from targetRef but not from baseSha.
+   * Returns 0 if the range cannot be computed.
+   */
+  async getCommitCountSince(baseSha, targetRef) {
+    try {
+      const output = await this.git.raw(["rev-list", "--count", `${baseSha}..${targetRef}`]);
+      return Number.parseInt(output.trim(), 10) || 0;
+    } catch {
+      return 0;
+    }
+  }
+  /**
+   * Creates a Git bundle at the given path from the provided revision specs.
+   * Returns created=false if specs are empty or git reports no new content.
+   */
+  async createBundle(bundlePath, revisionSpecs) {
+    if (revisionSpecs.length === 0) {
+      return { created: false, bundlePath };
+    }
+    try {
+      await this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
+      const stat2 = await fs.stat(bundlePath);
+      return { created: stat2.size > 0, bundlePath };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Refusing to create empty bundle") || message.includes("no new commits") || message.includes("no new revisions")) {
+        return { created: false, bundlePath };
+      }
+      throw error;
+    }
+  }
+  /**
+   * Lists all refs contained in a Git bundle file.
+   */
+  async listBundleRefs(bundlePath) {
+    return this.git.raw(["bundle", "list-heads", bundlePath]).then((output) => this.parseBundleRefs(output)).catch((err) => {
+      throw new Error(`Failed to list Git bundle refs. ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
+  /**
+   * Extracts fully qualified refs (refs/**) from git bundle list-heads output.
+   * Filters out short refs like HEAD that don't start with 'refs/'.
+   */
+  parseBundleRefs(output) {
+    return output.split("\n").map((line) => line.trim()).filter(Boolean).flatMap((line) => {
+      const ref = line.split(/\s+/)[1];
+      return ref && ref.startsWith("refs/") ? [ref] : [];
+    });
+  }
+  /**
+   * Resolves a ref to its commit SHA, returning null if the ref cannot be resolved.
+   */
+  async resolveRef(ref) {
+    try {
+      return (await this.git.revparse(["--verify", ref])).trim();
+    } catch {
+      return null;
+    }
+  }
+};
+
+// src/lib/git-bundle-api.ts
+var GitBundleApi = class {
+  githubApi;
+  gitApi;
+  constructor(repoPath, githubApi) {
+    this.githubApi = githubApi;
+    this.gitApi = new GitApi(repoPath);
+  }
+  async ensureGitRepository() {
+    this.githubApi.info("Checking if current working directory is a Git repository...");
+    const isRepo = await this.gitApi.checkIsRepo();
+    if (!isRepo) {
+      throw new Error("Git repository not found. Run actions/checkout before git-bundle.");
+    }
+    this.githubApi.info("Git repository found.");
+  }
+  async fetchTrackedRefs(trackedRefs = DEFAULT_TRACKED_REFS) {
+    const fetchRefSpecs = this.gitApi.buildFetchRefSpecs(trackedRefs);
+    const wasShallow = await this.gitApi.isShallowRepository();
+    if (!wasShallow) {
+      const fetchResult = await this.gitApi.fetch(fetchRefSpecs);
+      return { wasShallow: false, fetchResult };
+    }
+    try {
+      const fetchResult = await this.gitApi.fetchUnshallow(fetchRefSpecs);
+      return { wasShallow: true, fetchResult };
+    } catch (error) {
+      const unshallowError = error instanceof Error ? error.message : String(error);
+      const fetchResult = await this.gitApi.fetch(fetchRefSpecs);
+      return { wasShallow: true, unshallowError, fetchResult };
+    }
+  }
+  formatFetchResult(result) {
+    const rawOutput = result.raw?.trim();
+    if (rawOutput) {
+      return rawOutput;
+    }
+    const updatedCount = Array.isArray(result.updated) ? result.updated.length : 0;
+    const deletedCount = Array.isArray(result.deleted) ? result.deleted.length : 0;
+    return `(remote=${result.remote || "unknown"}, updated=${updatedCount}, deleted=${deletedCount}).`;
+  }
+  getTransportRef(bundleName) {
+    return `refs/heads/${bundleName}`;
+  }
+  async importBundle(bundlePath, bundleName) {
+    return this.gitApi.importBundle(bundlePath, this.getTransportRef(bundleName));
+  }
+  async createSnapshot(trackedRefs) {
+    return this.gitApi.createSnapshot(trackedRefs);
+  }
   diffSnapshots(previousSnapshot, currentSnapshot) {
     const changed = /* @__PURE__ */ new Set();
-    for (const [ref, sha] of Object.entries(currentSnapshot.tags)) {
-      if (previousSnapshot.tags[ref] !== sha) {
-        changed.add(ref);
-      }
-    }
-    for (const [ref, sha] of Object.entries(currentSnapshot.notes)) {
-      if (previousSnapshot.notes[ref] !== sha) {
+    for (const [ref, sha] of Object.entries(currentSnapshot)) {
+      if (previousSnapshot[ref] !== sha) {
         changed.add(ref);
       }
     }
     return [...changed];
+  }
+  async getHeadSha() {
+    return this.gitApi.getHeadSha();
+  }
+  async updateRef(ref, sha) {
+    await this.gitApi.updateRef(ref, sha);
+  }
+  async getCommitCountSince(baseSha, targetRef) {
+    return this.gitApi.getCommitCountSince(baseSha, targetRef);
   }
   buildRevisionSpecs(input) {
     if (input.commitCount === 0 && input.changedRefs.length === 0) {
@@ -189,98 +335,150 @@ var Repo = class _Repo {
     specs.push(...input.changedRefs);
     return [...new Set(specs.filter(Boolean))];
   }
-  async tryCreateBundle(bundlePath, revisionSpecs) {
-    if (revisionSpecs.length === 0) {
-      return false;
+  async createBundle(bundlePath, revisionSpecs) {
+    return this.gitApi.createBundle(bundlePath, revisionSpecs);
+  }
+  saveSnapshot(snapshot) {
+    this.githubApi.saveState("git-bundle-snapshot", JSON.stringify(snapshot));
+  }
+  readSavedSnapshot() {
+    const raw = this.githubApi.getState("git-bundle-snapshot");
+    if (!raw) {
+      return {};
     }
     try {
-      await this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
-      const stat2 = await fs.stat(bundlePath);
-      return stat2.size > 0;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("Refusing to create empty bundle") || message.includes("no new commits") || message.includes("no new revisions")) {
-        core.notice("No bundle content needs to be created for this job.");
-        return false;
-      }
-      throw error;
-    }
-  }
-  async uploadArtifact(bundleName, files, rootDir) {
-    await this.deleteArtifactIfExists(bundleName);
-    await artifact.uploadArtifact(bundleName, files, rootDir);
-  }
-  async deleteArtifactIfExists(bundleName) {
-    try {
-      await artifact.deleteArtifact(bundleName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.toLowerCase().includes("not found")) {
-        core.warning(`Failed to delete existing artifact "${bundleName}": ${message}`);
-      }
-    }
-  }
-  async listBundleRefs(bundlePath) {
-    if (!await this.fileExists(bundlePath)) {
-      return [];
-    }
-    try {
-      const output = await this.git.raw(["bundle", "list-heads", bundlePath]);
-      return output.split("\n").map((line) => line.trim()).filter(Boolean).flatMap((line) => {
-        const ref = line.split(/\s+/)[1];
-        return ref && ref.startsWith("refs/") ? [ref] : [];
-      });
+      return JSON.parse(raw);
     } catch {
-      return [];
-    }
-  }
-  async fetchBundleRef(bundlePath, ref) {
-    try {
-      await this.git.fetch([bundlePath, `+${ref}:${ref}`]);
-    } catch (error) {
-      core.debug(`Failed to import ref ${ref}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  async getHeadSha() {
-    return (await this.git.revparse(["HEAD"])).trim();
-  }
-  async resolveRef(ref) {
-    try {
-      return (await this.git.revparse(["--verify", ref])).trim();
-    } catch {
-      return null;
-    }
-  }
-  async updateRef(ref, sha) {
-    await this.git.raw(["update-ref", ref, sha]);
-  }
-  async getCommitCountSince(baseSha, targetRef) {
-    try {
-      const output = await this.git.raw(["rev-list", "--count", `${baseSha}..${targetRef}`]);
-      return Number.parseInt(output.trim(), 10) || 0;
-    } catch {
-      return 0;
-    }
-  }
-  getTransportRef(bundleName) {
-    return `refs/head/${bundleName}`;
-  }
-  async fileExists(filePath) {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
+      this.githubApi.warning("Snapshot state is invalid JSON. Using empty baseline for diff.");
+      return {};
     }
   }
 };
-var repo = new Repo();
+
+// src/lib/git-bundle-action.ts
+var GitBundleAction = class {
+  constructor(githubApi = new GithubApi()) {
+    this.githubApi = githubApi;
+  }
+  async pre() {
+  }
+  async main() {
+    const { bundleName, trackedRefs, repoPath, tempDir } = this.readContext();
+    const bundleApi = new GitBundleApi(repoPath, this.githubApi);
+    await bundleApi.ensureGitRepository();
+    this.githubApi.info("Checking if the Git repository has complete history...");
+    const fetchRefsResult = await bundleApi.fetchTrackedRefs(trackedRefs);
+    if (fetchRefsResult.wasShallow) {
+      if (fetchRefsResult.unshallowError) {
+        this.githubApi.warning(
+          `Full history fetch failed: ${fetchRefsResult.unshallowError}. Repository may remain shallow.`
+        );
+      } else {
+        this.githubApi.info("Repository is shallow - fetching full history and tags...");
+      }
+      this.githubApi.info(
+        `Fetched full history and refs: ${bundleApi.formatFetchResult(fetchRefsResult.fetchResult)}`
+      );
+    } else {
+      this.githubApi.info("Repository is already fully fetched.");
+      this.githubApi.info("Fetching all tags to ensure tag refs are up to date.");
+      this.githubApi.info(
+        `Fetched tag refs: ${bundleApi.formatFetchResult(fetchRefsResult.fetchResult)}`
+      );
+    }
+    this.githubApi.info(`Checking for existing artifact bundle "${bundleName}"...`);
+    const artifact = await this.githubApi.getArtifact(bundleName);
+    if (!artifact) {
+      this.githubApi.notice(
+        `No previous artifact named "${bundleName}" found. This is expected in the first job.`
+      );
+    } else {
+      const createdAt = artifact.createdAt ? formatDate(artifact.createdAt) : "unknown";
+      this.githubApi.info(
+        `Artifact "${artifact.name}" found (id=${artifact.id}, size=${formatFileSize(artifact.size)}, createdAt=${createdAt}, digest=${artifact.digest}). Downloading...`
+      );
+      const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
+      this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
+      this.githubApi.info("Fetching Git bundle refs...");
+      const importResult = await bundleApi.importBundle(bundlePath, bundleName);
+      if (importResult.skipped) {
+        this.githubApi.notice(
+          `No valid refs found in artifact "${bundleName}". Import is skipped.`
+        );
+      } else {
+        const transportRef = bundleApi.getTransportRef(bundleName);
+        this.githubApi.debug(importResult.fetchRaw ?? "");
+        this.githubApi.info(
+          `Git bundle "${bundleName}" imported successfully. Resolving transport ref "${transportRef}"...`
+        );
+        this.githubApi.info(
+          `Transport ref "${transportRef}" resolved to ${importResult.transportedHead}. Checking out...`
+        );
+        this.githubApi.info(
+          `Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`
+        );
+      }
+    }
+    const snapshot = await bundleApi.createSnapshot(trackedRefs);
+    bundleApi.saveSnapshot(snapshot);
+  }
+  async post() {
+    const { bundleName, trackedRefs, repoPath, tempDir } = this.readContext();
+    const bundleApi = new GitBundleApi(repoPath, this.githubApi);
+    await bundleApi.ensureGitRepository();
+    const githubSha = this.githubApi.getContextSha();
+    const previousSnapshot = bundleApi.readSavedSnapshot();
+    const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
+    const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
+    const headSha = await bundleApi.getHeadSha();
+    const transportRef = bundleApi.getTransportRef(bundleName);
+    await bundleApi.updateRef(transportRef, headSha);
+    const commitCount = await bundleApi.getCommitCountSince(githubSha, transportRef);
+    const revisionSpecs = bundleApi.buildRevisionSpecs({
+      githubSha,
+      transportRef,
+      changedRefs,
+      commitCount
+    });
+    const bundlePath = path.join(tempDir, bundleName);
+    const bundleResult = await bundleApi.createBundle(bundlePath, revisionSpecs);
+    if (!bundleResult.created) {
+      this.githubApi.notice(
+        `No new bundle content for "${bundleName}". Artifact upload is skipped by design.`
+      );
+      return;
+    }
+    try {
+      await this.githubApi.deleteArtifact(bundleName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.toLowerCase().includes("not found")) {
+        this.githubApi.warning(
+          `Upload step: failed to delete existing artifact "${bundleName}": ${message}`
+        );
+      }
+    }
+    await this.githubApi.uploadArtifact(bundleName, [bundleResult.bundlePath], tempDir);
+  }
+  readContext() {
+    const bundleName = this.githubApi.getInput("bundle", { required: false }) || "release";
+    const repoPathInput = this.githubApi.getInput("path", { required: false });
+    const tempDirInput = this.githubApi.getInput("tempDir", { required: false });
+    const trackedRefsInput = this.githubApi.getInput("refs", { required: false });
+    const trackedRefs = trackedRefsInput.split(",").map((ref) => ref.trim()).filter(Boolean);
+    const repoPath = repoPathInput || process.env["GITHUB_WORKSPACE"]?.trim() || process.cwd();
+    const tempDir = tempDirInput || process.env["RUNNER_TEMP"]?.trim() || os.tmpdir();
+    return {
+      bundleName,
+      repoPath,
+      tempDir,
+      trackedRefs: trackedRefs.length > 0 ? trackedRefs : DEFAULT_TRACKED_REFS
+    };
+  }
+};
 
 // src/post.ts
-(async () => {
-  const bundleName = core2.getInput("bundle", { required: false }) || "release";
-  await repo.post(bundleName);
-})().catch((error) => {
+new GitBundleAction().post().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  core2.warning(`POST execution failed: ${message}`);
+  core.setFailed(message);
 });
