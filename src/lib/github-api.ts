@@ -72,7 +72,12 @@ export class GithubApi {
       throw new Error(`Artifact download returned no path for "${artifact.name}".`);
     }
 
-    return join(result.downloadPath, artifact.name);
+    // The artifact is downloaded and extracted to downloadPath.
+    // When uploaded via uploadArtifact(name, files, rootDir), each file is placed at the artifact root.
+    // For a bundle file at rootDir/bundleName, the downloaded path is downloadPath/bundleName.
+    const bundlePath = join(result.downloadPath, artifact.name);
+    this.debug(`Artifact extraction path: ${result.downloadPath}, bundle file path: ${bundlePath}`);
+    return bundlePath;
   }
 
   async uploadArtifact(name: string, files: string[], rootDirectory: string, options?: UploadArtifactOptions) {
