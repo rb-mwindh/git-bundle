@@ -19,7 +19,7 @@ jobs:
       - name: Compute next version
         id: compute
         run: |
-          VERSION="1.0.0"  # In real scenario, compute this based on commits or other logic
+          VERSION="99.0.0"  # In real scenario, compute this based on commits or other logic
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create release
@@ -28,7 +28,7 @@ jobs:
           git config user.email "test@example.com"
           git commit --allow-empty -m "1"
           git commit --allow-empty -m "2"
-          git tag v${VERSION}
+          git tag v${{steps.compute.outputs.version}}
 
   build:
     runs-on: ubuntu-latest
