@@ -1,3 +1,10 @@
+# [1.0.0-rc.5](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.4...v1.0.0-rc.5) (2026-04-09)
+
+
+### Features
+
+* **action:** rework implementation layers ([bd24fa0](https://github.com/rb-mwindh/git-bundle/commit/bd24fa096a205872bce6051af2ac975cfbfa8e1c))
+
 # [1.0.0-rc.4](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.3...v1.0.0-rc.4) (2026-04-09)
 
 

@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.3 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.4 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
@@ -106,7 +106,6 @@ var GithubApi = class {
 
 // src/lib/git-api.ts
 import { simpleGit } from "simple-git";
-import * as fs from "node:fs/promises";
 var DEFAULT_TRACKED_REFS = ["refs/tags/*", "refs/notes/*"];
 var GitApi = class {
   git;
@@ -178,7 +177,7 @@ var GitApi = class {
    * Updates a Git ref to point to the given commit SHA.
    */
   async updateRef(ref, sha) {
-    await this.git.raw(["update-ref", ref, sha]);
+    return this.git.raw(["update-ref", ref, sha]);
   }
   /**
    * Returns the number of commits reachable from targetRef but not from baseSha.
@@ -197,20 +196,7 @@ var GitApi = class {
    * Returns created=false if specs are empty or git reports no new content.
    */
   async createBundle(bundlePath, revisionSpecs) {
-    if (revisionSpecs.length === 0) {
-      return { created: false, bundlePath };
-    }
-    try {
-      await this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
-      const stat2 = await fs.stat(bundlePath);
-      return { created: stat2.size > 0, bundlePath };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("Refusing to create empty bundle") || message.includes("no new commits") || message.includes("no new revisions")) {
-        return { created: false, bundlePath };
-      }
-      throw error;
-    }
+    return this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
   }
   /**
    * Lists all refs contained in a Git bundle file.
@@ -248,6 +234,7 @@ var GitApi = class {
 };
 
 // src/lib/git-bundle-api.ts
+import fs from "node:fs";
 var GitBundleApi = class {
   githubApi;
   gitApi;
@@ -294,6 +281,8 @@ var GitBundleApi = class {
   async importBundle(bundlePath, bundleName) {
     this.githubApi.info("Fetching Git bundle refs...");
     const transportRef = this.getTransportRef(bundleName);
+    const stats = fs.statSync(bundlePath);
+    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats.isFile()}, size: ${stats.size} bytes.`);
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
@@ -339,25 +328,49 @@ ${this.formatFetchResult(fetchResult)}`);
     return this.gitApi.getHeadSha();
   }
   async updateRef(ref, sha) {
-    await this.gitApi.updateRef(ref, sha);
+    this.githubApi.info(`Updating Git ref "${ref}" to point to SHA ${sha}...`);
+    try {
+      const result = await this.gitApi.updateRef(ref, sha);
+      this.githubApi.info(result);
+    } catch (error) {
+      throw new Error(`Failed to update Git ref "${ref}" to SHA ${sha}. ${String(error)}`);
+    }
   }
   async getCommitCountSince(baseSha, targetRef) {
     return this.gitApi.getCommitCountSince(baseSha, targetRef);
   }
-  buildRevisionSpecs(input) {
-    if (input.commitCount === 0 && input.changedRefs.length === 0) {
+  async buildRevisionSpecs(githubSha, transportRef, changedRefs) {
+    const commitCount = await this.gitApi.getCommitCountSince(githubSha, transportRef);
+    if (commitCount === 0 && changedRefs.length === 0) {
       return [];
     }
     const specs = [];
-    if (input.commitCount > 0) {
-      specs.push(`${input.githubSha}..${input.transportRef}`);
+    if (commitCount > 0) {
+      specs.push(`${githubSha}..${transportRef}`);
     }
-    specs.push(input.transportRef);
-    specs.push(...input.changedRefs);
+    specs.push(transportRef);
+    specs.push(...changedRefs);
     return [...new Set(specs.filter(Boolean))];
   }
   async createBundle(bundlePath, revisionSpecs) {
-    return this.gitApi.createBundle(bundlePath, revisionSpecs);
+    this.githubApi.info(`Creating Git bundle at "${bundlePath}" with revision specs: ${JSON.stringify(revisionSpecs)}`);
+    if (revisionSpecs.length === 0) {
+      return false;
+    }
+    try {
+      const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
+      this.githubApi.debug(result);
+      const stat = fs.statSync(bundlePath);
+      this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
+      return stat.size > 0;
+    } catch (error) {
+      this.githubApi.debug(String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Refusing to create empty bundle") || message.includes("no new commits") || message.includes("no new revisions")) {
+        return false;
+      }
+      throw error;
+    }
   }
   saveSnapshot(snapshot) {
     this.githubApi.saveState("git-bundle-snapshot", JSON.stringify(snapshot));
@@ -381,6 +394,7 @@ var GitBundleAction = class {
   constructor(githubApi = new GithubApi()) {
     this.githubApi = githubApi;
   }
+  githubApi;
   async pre() {
   }
   async main() {
@@ -433,22 +447,17 @@ var GitBundleAction = class {
     const previousSnapshot = bundleApi.readSavedSnapshot();
     const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
     const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
+    this.githubApi.info(`Compared repo snapshots: ${JSON.stringify(changedRefs)}`);
     const headSha = await bundleApi.getHeadSha();
     const transportRef = bundleApi.getTransportRef(bundleName);
     await bundleApi.updateRef(transportRef, headSha);
-    const commitCount = await bundleApi.getCommitCountSince(githubSha, transportRef);
-    const revisionSpecs = bundleApi.buildRevisionSpecs({
-      githubSha,
-      transportRef,
-      changedRefs,
-      commitCount
-    });
-    this.githubApi.debug(
+    const revisionSpecs = await bundleApi.buildRevisionSpecs(githubSha, transportRef, changedRefs);
+    this.githubApi.info(
       `Bundle revision specs (count=${revisionSpecs.length}): ${revisionSpecs.join(", ") || "(empty)"}`
     );
     const bundlePath = path.join(tempDir, bundleName);
-    const bundleResult = await bundleApi.createBundle(bundlePath, revisionSpecs);
-    if (!bundleResult.created) {
+    const bundleCreated = await bundleApi.createBundle(bundlePath, revisionSpecs);
+    if (!bundleCreated) {
       this.githubApi.notice(
         `No new bundle content for "${bundleName}". Artifact upload is skipped by design.`
       );
@@ -464,7 +473,8 @@ var GitBundleAction = class {
         );
       }
     }
-    await this.githubApi.uploadArtifact(bundleName, [bundleResult.bundlePath], tempDir);
+    const { id, size, digest } = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
+    this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
   }
   readContext() {
     const bundleName = this.githubApi.getInput("bundle", { required: false }) || "release";
