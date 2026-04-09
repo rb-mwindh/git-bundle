@@ -1,3 +1,20 @@
+# [1.0.0-rc.4](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.3...v1.0.0-rc.4) (2026-04-09)
+
+
+* refactor(git)!: move bundle import flow into GitBundleApi ([f112e90](https://github.com/rb-mwindh/git-bundle/commit/f112e909005181c9e51b9055b8a461154ea65c20))
+
+
+### Bug Fixes
+
+* **github-api:** add diagnostic logging for artifact download path ([c5b5061](https://github.com/rb-mwindh/git-bundle/commit/c5b5061ebad501d8fcf31e4db76f79d257948313))
+
+
+### BREAKING CHANGES
+
+* `GitBundleApi.importBundle()` now returns `Promise<void>`
+instead of `Promise<ImportBundleResult>`, and `GitApi.importBundle()` has been
+removed in favor of `fetch()`, `resolveRef()`, `checkout()`, and `listBundleRefs()`.
+
 # [1.0.0-rc.3](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.2...v1.0.0-rc.3) (2026-04-08)
 
 

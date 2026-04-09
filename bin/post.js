@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.2 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.3 | MIT */
 
 // src/post.ts
 import * as core from "@actions/core";
@@ -92,7 +92,9 @@ var GithubApi = class {
     if (!result?.downloadPath) {
       throw new Error(`Artifact download returned no path for "${artifact.name}".`);
     }
-    return join(result.downloadPath, artifact.name);
+    const bundlePath = join(result.downloadPath, artifact.name);
+    this.debug(`Artifact extraction path: ${result.downloadPath}, bundle file path: ${bundlePath}`);
+    return bundlePath;
   }
   async uploadArtifact(name, files, rootDirectory, options) {
     return artifactClient.uploadArtifact(name, files, rootDirectory, options);
@@ -142,23 +144,8 @@ var GitApi = class {
   async fetchUnshallow(fetchRefSpecs = []) {
     return this.git.fetch(["--force", "--unshallow", "origin", ...fetchRefSpecs]);
   }
-  /**
-   * Imports a Git bundle file by fetching its refs into the local repository,
-   * then checks out the transported head commit.
-   * Returns skipped=true if the bundle contains no valid refs.
-   */
-  async importBundle(bundlePath, transportRef) {
-    const bundleRefs = await this.listBundleRefs(bundlePath);
-    if (bundleRefs.length === 0) {
-      return { bundleRefs: [], skipped: true };
-    }
-    const fetchResult = await this.git.fetch([bundlePath, ...bundleRefs]);
-    const transportedHead = await this.resolveRef(transportRef);
-    if (!transportedHead) {
-      throw new Error(`Required ref "${transportRef}" could not be resolved after bundle import.`);
-    }
-    await this.git.checkout(["--force", transportedHead]);
-    return { bundleRefs, skipped: false, fetchRaw: fetchResult.raw, transportedHead };
+  async checkout(sha) {
+    return this.git.checkout(["--force", sha]);
   }
   /**
    * Creates a snapshot of all current refs matching the given prefixes as a flat ref→sha map.
@@ -229,9 +216,14 @@ var GitApi = class {
    * Lists all refs contained in a Git bundle file.
    */
   async listBundleRefs(bundlePath) {
-    return this.git.raw(["bundle", "list-heads", bundlePath]).then((output) => this.parseBundleRefs(output)).catch((err) => {
-      throw new Error(`Failed to list Git bundle refs. ${err instanceof Error ? err.message : String(err)}`);
-    });
+    try {
+      const output = await this.git.raw(["bundle", "list-heads", bundlePath]);
+      const refs = this.parseBundleRefs(output);
+      return refs;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to list refs in bundle "${bundlePath}". ${message}`);
+    }
   }
   /**
    * Extracts fully qualified refs (refs/**) from git bundle list-heads output.
@@ -300,7 +292,36 @@ var GitBundleApi = class {
     return `refs/heads/${bundleName}`;
   }
   async importBundle(bundlePath, bundleName) {
-    return this.gitApi.importBundle(bundlePath, this.getTransportRef(bundleName));
+    this.githubApi.info("Fetching Git bundle refs...");
+    const transportRef = this.getTransportRef(bundleName);
+    const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
+    if (bundleRefs.length === 0) {
+      this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
+      return;
+    }
+    this.githubApi.debug(`Importing refs from bundle "${bundlePath}: 
+ * ${bundleRefs.join("\n * ")}`);
+    try {
+      const fetchResult = await this.gitApi.fetch([bundlePath, ...bundleRefs]);
+      this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.
+${this.formatFetchResult(fetchResult)}`);
+    } catch (err) {
+      throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
+    }
+    this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
+    const transportedHead = await this.gitApi.resolveRef(transportRef);
+    if (!transportedHead) {
+      throw new Error(
+        `Required ref "${transportRef}" could not be resolved after importing bundle "${bundlePath}". Bundle contains refs: [${bundleRefs.join(", ")}]. Ensure the bundle was created with the transport ref included in the revision specs.`
+      );
+    }
+    this.githubApi.info(`Transport ref "${transportRef}" resolved to SHA ${transportedHead}. Checking out...`);
+    try {
+      await this.gitApi.checkout(transportedHead);
+    } catch (error) {
+      throw new Error(`Transport ref "${transportRef}" could not be checked out after importing bundle "${bundlePath}". ${String(error)}`);
+    }
+    this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
   }
   async createSnapshot(trackedRefs) {
     return this.gitApi.createSnapshot(trackedRefs);
@@ -399,25 +420,7 @@ var GitBundleAction = class {
       );
       const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
       this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
-      this.githubApi.info("Fetching Git bundle refs...");
-      const importResult = await bundleApi.importBundle(bundlePath, bundleName);
-      if (importResult.skipped) {
-        this.githubApi.notice(
-          `No valid refs found in artifact "${bundleName}". Import is skipped.`
-        );
-      } else {
-        const transportRef = bundleApi.getTransportRef(bundleName);
-        this.githubApi.debug(importResult.fetchRaw ?? "");
-        this.githubApi.info(
-          `Git bundle "${bundleName}" imported successfully. Resolving transport ref "${transportRef}"...`
-        );
-        this.githubApi.info(
-          `Transport ref "${transportRef}" resolved to ${importResult.transportedHead}. Checking out...`
-        );
-        this.githubApi.info(
-          `Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`
-        );
-      }
+      await bundleApi.importBundle(bundlePath, bundleName);
     }
     const snapshot = await bundleApi.createSnapshot(trackedRefs);
     bundleApi.saveSnapshot(snapshot);
@@ -440,6 +443,9 @@ var GitBundleAction = class {
       changedRefs,
       commitCount
     });
+    this.githubApi.debug(
+      `Bundle revision specs (count=${revisionSpecs.length}): ${revisionSpecs.join(", ") || "(empty)"}`
+    );
     const bundlePath = path.join(tempDir, bundleName);
     const bundleResult = await bundleApi.createBundle(bundlePath, revisionSpecs);
     if (!bundleResult.created) {
