@@ -106,49 +106,56 @@ describe('GitApi', () => {
     });
   });
 
-  describe('importBundle', () => {
-    it('skips import when list-heads contains no fully qualified refs', async () => {
+  describe('listBundleRefs', () => {
+    it('returns only fully-qualified refs', async () => {
+      git.raw.mockResolvedValue('123 refs/heads/main\n123 HEAD\n999 refs/tags/v1.2.3\n');
+
+      await expect(api.listBundleRefs('/tmp/bundle')).resolves.toEqual(['refs/heads/main', 'refs/tags/v1.2.3']);
+      expect(git.raw).toHaveBeenCalledWith(['bundle', 'list-heads', '/tmp/bundle']);
+    });
+
+    it('returns empty array when no fully-qualified refs are present', async () => {
       git.raw.mockResolvedValue('123 HEAD\n');
 
-      await expect(api.importBundle('/tmp/bundle', 'refs/heads/main')).resolves.toEqual({
-        bundleRefs: [],
-        skipped: true,
-      });
-      expect(git.fetch).not.toHaveBeenCalled();
-      expect(git.checkout).not.toHaveBeenCalled();
+      await expect(api.listBundleRefs('/tmp/bundle')).resolves.toEqual([]);
     });
 
-    it('imports only fully qualified refs and checks out resolved transport head', async () => {
-      git.raw.mockResolvedValue('123 refs/heads/main\n123 HEAD\n999 refs/tags/v1.2.3\n');
-      git.fetch.mockResolvedValue({raw: 'fetch-ok'} as FetchResult);
-      git.revparse.mockResolvedValue('abc123\n');
-
-      await expect(api.importBundle('/tmp/bundle', 'refs/heads/main')).resolves.toEqual({
-        bundleRefs: ['refs/heads/main', 'refs/tags/v1.2.3'],
-        skipped: false,
-        fetchRaw: 'fetch-ok',
-        transportedHead: 'abc123',
-      });
-      expect(git.fetch).toHaveBeenCalledWith(['/tmp/bundle', 'refs/heads/main', 'refs/tags/v1.2.3']);
-      expect(git.checkout).toHaveBeenCalledWith(['--force', 'abc123']);
-    });
-
-    it('throws when transport ref cannot be resolved after import', async () => {
-      git.raw.mockResolvedValue('123 refs/heads/main\n');
-      git.fetch.mockResolvedValue({raw: 'ok'} as FetchResult);
-      git.revparse.mockResolvedValue('   ');
-
-      await expect(api.importBundle('/tmp/bundle', 'refs/heads/missing'))
-        .rejects
-        .toThrow('Required ref "refs/heads/missing" could not be resolved after bundle import.');
-    });
-
-    it('wraps bundle list errors with context', async () => {
+    it('wraps list-heads errors with context', async () => {
       git.raw.mockRejectedValue(new Error('permission denied'));
 
-      await expect(api.importBundle('/tmp/bundle', 'refs/heads/main'))
+      await expect(api.listBundleRefs('/tmp/bundle'))
         .rejects
-        .toThrow('Failed to list Git bundle refs. permission denied');
+        .toThrow('Failed to list refs in bundle "/tmp/bundle". permission denied');
+    });
+  });
+
+  describe('resolveRef', () => {
+    it('returns trimmed sha for a resolvable ref', async () => {
+      git.revparse.mockResolvedValue('abc123\n');
+
+      await expect(api.resolveRef('refs/heads/main')).resolves.toBe('abc123');
+      expect(git.revparse).toHaveBeenCalledWith(['--verify', 'refs/heads/main']);
+    });
+
+    it('returns empty string for whitespace-only output', async () => {
+      git.revparse.mockResolvedValue('   ');
+
+      await expect(api.resolveRef('refs/heads/missing')).resolves.toBe('');
+    });
+
+    it('returns null when revparse throws', async () => {
+      git.revparse.mockRejectedValue(new Error('unknown ref'));
+
+      await expect(api.resolveRef('refs/heads/missing')).resolves.toBeNull();
+    });
+  });
+
+  describe('checkout', () => {
+    it('checks out the given sha with --force', async () => {
+      git.checkout.mockResolvedValue(undefined as never);
+
+      await api.checkout('abc123');
+      expect(git.checkout).toHaveBeenCalledWith(['--force', 'abc123']);
     });
   });
 

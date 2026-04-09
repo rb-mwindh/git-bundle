@@ -59,7 +59,6 @@ describe('GitBundleAction.main', () => {
 
     expect(githubApi.downloadArtifact).toHaveBeenCalledWith(artifact, inputs['tempDir']!);
     expect(importBundle).toHaveBeenCalledWith('/tmp/release', 'release');
-    expect(githubApi.debug).toHaveBeenCalledWith('--TEST--');
   });
 });
 

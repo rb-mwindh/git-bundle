@@ -122,4 +122,63 @@ describe('GitBundleApi', () => {
     expect(api.getTransportRef('release')).toBe('refs/heads/release');
     expect(api.diffSnapshots({'refs/tags/v1': 'a'}, {'refs/tags/v1': 'b'})).toEqual(['refs/tags/v1']);
   });
+
+  describe('importBundle', () => {
+    it('skips and logs notice when bundle has no valid refs', async () => {
+      const {api, githubApi} = createHarness();
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue([]);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(githubApi.notice).toHaveBeenCalledWith(
+        'No valid refs found in artifact "release". Import is skipped.'
+      );
+    });
+
+    it('fetches refs and checks out resolved transport ref', async () => {
+      const {api, githubApi} = createHarness();
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release', 'refs/tags/v1']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'fetch-ok'} as never);
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(githubApi.info).toHaveBeenCalledWith(expect.stringContaining('refs/heads/release'));
+      expect(checkout).toHaveBeenCalledWith('abc123');
+    });
+
+    it('throws when transport ref cannot be resolved after import', async () => {
+      const {api} = createHarness();
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue(null);
+
+      await expect(api.importBundle('/tmp/release', 'release'))
+        .rejects
+        .toThrow('Required ref "refs/heads/release" could not be resolved after importing bundle "/tmp/release".');
+    });
+
+    it('wraps fetch errors with context', async () => {
+      const {api} = createHarness();
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockRejectedValue(new Error('network error'));
+
+      await expect(api.importBundle('/tmp/release', 'release'))
+        .rejects
+        .toThrow('Failed to import Git bundle "/tmp/release": Error: network error');
+    });
+
+    it('wraps checkout errors with context', async () => {
+      const {api} = createHarness();
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
+      jest.spyOn(GitApi.prototype, 'checkout').mockRejectedValue(new Error('checkout failed'));
+
+      await expect(api.importBundle('/tmp/release', 'release'))
+        .rejects
+        .toThrow('Transport ref "refs/heads/release" could not be checked out after importing bundle "/tmp/release".');
+    });
+  });
 });

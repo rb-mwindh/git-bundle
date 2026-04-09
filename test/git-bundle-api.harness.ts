@@ -8,12 +8,7 @@ export function createGitBundleApiHarness() {
     fetchResult: {raw: 'Already up to date.'} as never,
   });
   const formatFetchResult = jest.spyOn(GitBundleApi.prototype, 'formatFetchResult').mockReturnValue('Already up to date.');
-  const importBundle = jest.spyOn(GitBundleApi.prototype, 'importBundle').mockResolvedValue({
-    bundleRefs: ['refs/heads/release'],
-    skipped: false,
-    fetchRaw: '--TEST--',
-    transportedHead: 'abc123',
-  });
+  const importBundle = jest.spyOn(GitBundleApi.prototype, 'importBundle').mockResolvedValue(undefined);
   const createSnapshot = jest.spyOn(GitBundleApi.prototype, 'createSnapshot').mockResolvedValue({'refs/tags/v1.0.0': 'new-sha'});
   const saveSnapshot = jest.spyOn(GitBundleApi.prototype, 'saveSnapshot').mockImplementation(() => undefined);
   const readSavedSnapshot = jest.spyOn(GitBundleApi.prototype, 'readSavedSnapshot').mockReturnValue({'refs/tags/v1.0.0': 'old-sha'});
