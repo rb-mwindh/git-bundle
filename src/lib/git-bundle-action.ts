@@ -63,26 +63,7 @@ export class GitBundleAction implements GitAction {
       const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
       this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
 
-      this.githubApi.info('Fetching Git bundle refs...');
-      const importResult = await bundleApi.importBundle(bundlePath, bundleName);
-
-      if (importResult.skipped) {
-        this.githubApi.notice(
-          `No valid refs found in artifact "${bundleName}". Import is skipped.`
-        );
-      } else {
-        const transportRef = bundleApi.getTransportRef(bundleName);
-        this.githubApi.debug(importResult.fetchRaw ?? '');
-        this.githubApi.info(
-          `Git bundle "${bundleName}" imported successfully. Resolving transport ref "${transportRef}"...`
-        );
-        this.githubApi.info(
-          `Transport ref "${transportRef}" resolved to ${importResult.transportedHead}. Checking out...`
-        );
-        this.githubApi.info(
-          `Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`
-        );
-      }
+      await bundleApi.importBundle(bundlePath, bundleName);
     }
 
     const snapshot = await bundleApi.createSnapshot(trackedRefs);
@@ -110,6 +91,10 @@ export class GitBundleAction implements GitAction {
       changedRefs,
       commitCount,
     });
+
+    this.githubApi.debug(
+      `Bundle revision specs (count=${revisionSpecs.length}): ${revisionSpecs.join(', ') || '(empty)'}`
+    );
 
     const bundlePath = path.join(tempDir, bundleName);
     const bundleResult = await bundleApi.createBundle(bundlePath, revisionSpecs);

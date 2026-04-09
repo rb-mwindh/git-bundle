@@ -63,8 +63,44 @@ export class GitBundleApi {
     return `refs/heads/${bundleName}`;
   }
 
-  async importBundle(bundlePath: string, bundleName: string): Promise<ImportBundleResult> {
-    return this.gitApi.importBundle(bundlePath, this.getTransportRef(bundleName));
+  async importBundle(bundlePath: string, bundleName: string): Promise<void> {
+    this.githubApi.info('Fetching Git bundle refs...');
+
+    const transportRef = this.getTransportRef(bundleName);
+    const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
+
+    if (bundleRefs.length === 0) {
+      this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
+      return;
+    }
+
+    this.githubApi.debug(`Importing refs from bundle "${bundlePath}: \n * ${bundleRefs.join('\n * ')}`);
+    try {
+      const fetchResult = await this.gitApi.fetch([bundlePath, ...bundleRefs]);
+      this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.\n${this.formatFetchResult(fetchResult)}`);
+    } catch (err) {
+      throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
+    }
+
+    this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
+    const transportedHead = await this.gitApi.resolveRef(transportRef);
+
+    if (!transportedHead) {
+      throw new Error(
+        `Required ref "${transportRef}" could not be resolved after importing bundle "${bundlePath}". ` +
+        `Bundle contains refs: [${bundleRefs.join(', ')}]. ` +
+        `Ensure the bundle was created with the transport ref included in the revision specs.`
+      );
+    }
+
+    this.githubApi.info(`Transport ref "${transportRef}" resolved to SHA ${transportedHead}. Checking out...`);
+    try {
+      await this.gitApi.checkout(transportedHead);
+    } catch (error) {
+      throw new Error(`Transport ref "${transportRef}" could not be checked out after importing bundle "${bundlePath}". ${String(error)}`);
+    }
+
+    this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
   }
 
   async createSnapshot(trackedRefs: string[]): Promise<RepoSnapshot> {

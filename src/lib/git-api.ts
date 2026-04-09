@@ -81,28 +81,8 @@ export class GitApi {
   }
 
 
-  /**
-   * Imports a Git bundle file by fetching its refs into the local repository,
-   * then checks out the transported head commit.
-   * Returns skipped=true if the bundle contains no valid refs.
-   */
-  async importBundle(bundlePath: string, transportRef: string): Promise<ImportBundleResult> {
-    const bundleRefs = await this.listBundleRefs(bundlePath);
-
-    if (bundleRefs.length === 0) {
-      return {bundleRefs: [], skipped: true};
-    }
-
-    const fetchResult = await this.git.fetch([bundlePath, ...bundleRefs]);
-    const transportedHead = await this.resolveRef(transportRef);
-
-    if (!transportedHead) {
-      throw new Error(`Required ref "${transportRef}" could not be resolved after bundle import.`);
-    }
-
-    await this.git.checkout(['--force', transportedHead]);
-
-    return {bundleRefs, skipped: false, fetchRaw: fetchResult.raw, transportedHead};
+  async checkout(sha: string) {
+    return this.git.checkout(['--force', sha]);
   }
 
   /**
@@ -187,12 +167,15 @@ export class GitApi {
   /**
    * Lists all refs contained in a Git bundle file.
    */
-  private async listBundleRefs(bundlePath: string): Promise<string[]> {
-    return this.git.raw(['bundle', 'list-heads', bundlePath])
-      .then(output => this.parseBundleRefs(output))
-      .catch(err => {
-        throw new Error(`Failed to list Git bundle refs. ${err instanceof Error ? err.message : String(err)}`);
-      });
+  async listBundleRefs(bundlePath: string): Promise<string[]> {
+    try {
+      const output = await this.git.raw(['bundle', 'list-heads', bundlePath]);
+      const refs = this.parseBundleRefs(output);
+      return refs;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to list refs in bundle "${bundlePath}". ${message}`);
+    }
   }
 
   /**
@@ -213,7 +196,7 @@ export class GitApi {
   /**
    * Resolves a ref to its commit SHA, returning null if the ref cannot be resolved.
    */
-  private async resolveRef(ref: string): Promise<string | null> {
+  async resolveRef(ref: string): Promise<string | null> {
     try {
       return (await this.git.revparse(['--verify', ref])).trim();
     } catch {
