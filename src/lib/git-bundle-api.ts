@@ -1,9 +1,9 @@
+import fs from 'node:fs';
 import {GithubApi} from './github-api.js';
 import {
   DEFAULT_TRACKED_REFS,
   type FetchRefsResult,
   GitApi,
-  type ImportBundleResult,
   type CreateBundleResult,
 } from './git-api.js';
 import {type FetchResult} from 'simple-git';
@@ -67,6 +67,10 @@ export class GitBundleApi {
     this.githubApi.info('Fetching Git bundle refs...');
 
     const transportRef = this.getTransportRef(bundleName);
+
+    const stats = fs.statSync(bundlePath);
+    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats.isFile()}, size: ${stats.size} bytes.`)
+
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
 
     if (bundleRefs.length === 0) {
@@ -124,37 +128,71 @@ export class GitBundleApi {
   }
 
   async updateRef(ref: string, sha: string): Promise<void> {
-    await this.gitApi.updateRef(ref, sha);
+    this.githubApi.info(`Updating Git ref "${ref}" to point to SHA ${sha}...`);
+    try {
+      const result = await this.gitApi.updateRef(ref, sha);
+      this.githubApi.info(result);
+    } catch (error) {
+      throw new Error(`Failed to update Git ref "${ref}" to SHA ${sha}. ${String(error)}`);
+    }
   }
 
   async getCommitCountSince(baseSha: string, targetRef: string): Promise<number> {
     return this.gitApi.getCommitCountSince(baseSha, targetRef);
   }
 
-  buildRevisionSpecs(input: {
-    githubSha: string;
-    transportRef: string;
-    changedRefs: string[];
-    commitCount: number;
-  }): string[] {
-    if (input.commitCount === 0 && input.changedRefs.length === 0) {
+  async buildRevisionSpecs(
+    githubSha: string,
+    transportRef: string,
+    changedRefs: string[],
+  ): Promise<string[]> {
+
+    const commitCount = await this.gitApi.getCommitCountSince(githubSha, transportRef);
+
+    if (commitCount === 0 && changedRefs.length === 0) {
       return [];
     }
 
     const specs: string[] = [];
 
-    if (input.commitCount > 0) {
-      specs.push(`${input.githubSha}..${input.transportRef}`);
+    if (commitCount > 0) {
+      specs.push(`${githubSha}..${transportRef}`);
     }
 
-    specs.push(input.transportRef);
-    specs.push(...input.changedRefs);
+    specs.push(transportRef);
+    specs.push(...changedRefs);
 
     return [...new Set(specs.filter(Boolean))];
   }
 
-  async createBundle(bundlePath: string, revisionSpecs: string[]): Promise<CreateBundleResult> {
-    return this.gitApi.createBundle(bundlePath, revisionSpecs);
+  async createBundle(bundlePath: string, revisionSpecs: string[]): Promise<boolean> {
+
+    this.githubApi.info(`Creating Git bundle at "${bundlePath}" with revision specs: ${JSON.stringify(revisionSpecs)}`);
+
+    if (revisionSpecs.length === 0) {
+      return false;
+    }
+
+    try {
+      const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
+      this.githubApi.debug(result);
+
+      const stat = fs.statSync(bundlePath);
+      this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
+
+      return stat.size > 0;
+    } catch (error) {
+      this.githubApi.debug(String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.includes('Refusing to create empty bundle') ||
+        message.includes('no new commits') ||
+        message.includes('no new revisions')
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   saveSnapshot(snapshot: RepoSnapshot): void {

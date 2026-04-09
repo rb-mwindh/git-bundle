@@ -121,8 +121,8 @@ export class GitApi {
   /**
    * Updates a Git ref to point to the given commit SHA.
    */
-  async updateRef(ref: string, sha: string): Promise<void> {
-    await this.git.raw(['update-ref', ref, sha]);
+  async updateRef(ref: string, sha: string) {
+    return this.git.raw(['update-ref', ref, sha]);
   }
 
   /**
@@ -142,26 +142,8 @@ export class GitApi {
    * Creates a Git bundle at the given path from the provided revision specs.
    * Returns created=false if specs are empty or git reports no new content.
    */
-  async createBundle(bundlePath: string, revisionSpecs: string[]): Promise<CreateBundleResult> {
-    if (revisionSpecs.length === 0) {
-      return {created: false, bundlePath};
-    }
-
-    try {
-      await this.git.raw(['bundle', 'create', bundlePath, ...revisionSpecs]);
-      const stat = await fs.stat(bundlePath);
-      return {created: stat.size > 0, bundlePath};
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (
-        message.includes('Refusing to create empty bundle') ||
-        message.includes('no new commits') ||
-        message.includes('no new revisions')
-      ) {
-        return {created: false, bundlePath};
-      }
-      throw error;
-    }
+  async createBundle(bundlePath: string, revisionSpecs: string[]) {
+    return this.git.raw(['bundle', 'create', bundlePath, ...revisionSpecs]);
   }
 
   /**

@@ -79,27 +79,21 @@ export class GitBundleAction implements GitAction {
     const previousSnapshot = bundleApi.readSavedSnapshot();
     const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
     const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
+    this.githubApi.info(`Compared repo snapshots: ${JSON.stringify(changedRefs)}`);
 
     const headSha = await bundleApi.getHeadSha();
     const transportRef = bundleApi.getTransportRef(bundleName);
     await bundleApi.updateRef(transportRef, headSha);
-    const commitCount = await bundleApi.getCommitCountSince(githubSha, transportRef);
 
-    const revisionSpecs = bundleApi.buildRevisionSpecs({
-      githubSha,
-      transportRef,
-      changedRefs,
-      commitCount,
-    });
-
-    this.githubApi.debug(
+    const revisionSpecs = await bundleApi.buildRevisionSpecs(githubSha, transportRef, changedRefs);
+    this.githubApi.info(
       `Bundle revision specs (count=${revisionSpecs.length}): ${revisionSpecs.join(', ') || '(empty)'}`
     );
 
     const bundlePath = path.join(tempDir, bundleName);
-    const bundleResult = await bundleApi.createBundle(bundlePath, revisionSpecs);
+    const bundleCreated = await bundleApi.createBundle(bundlePath, revisionSpecs);
 
-    if (!bundleResult.created) {
+    if (!bundleCreated) {
       this.githubApi.notice(
         `No new bundle content for "${bundleName}". Artifact upload is skipped by design.`
       );
@@ -117,7 +111,8 @@ export class GitBundleAction implements GitAction {
       }
     }
 
-    await this.githubApi.uploadArtifact(bundleName, [bundleResult.bundlePath], tempDir);
+    const { id, size, digest } = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
+    this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
   }
 
   private readContext() {
