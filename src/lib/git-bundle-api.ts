@@ -80,7 +80,7 @@ export class GitBundleApi {
 
     this.githubApi.debug(`Importing refs from bundle "${bundlePath}: \n * ${bundleRefs.join('\n * ')}`);
     try {
-      const fetchResult = await this.gitApi.fetch([bundlePath, ...bundleRefs]);
+      const fetchResult = await this.gitApi.fetchBundle(bundlePath, bundleRefs);
       this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.\n${this.formatFetchResult(fetchResult)}`);
     } catch (err) {
       throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
