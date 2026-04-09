@@ -73,10 +73,6 @@ export class GitApi {
     return this.git.fetch(['--force', 'origin', ...fetchRefSpecs]);
   }
 
-  async fetchBundle(bundlePath: string, fetchRefSpecs: string[] = []): Promise<FetchResult> {
-    return this.git.fetch(['--force', bundlePath, 'origin', ...fetchRefSpecs]);
-  }
-
   /**
    * Performs an unshallow force-fetch from origin.
    */
