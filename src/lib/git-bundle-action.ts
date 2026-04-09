@@ -77,9 +77,13 @@ export class GitBundleAction implements GitAction {
 
     const githubSha = this.githubApi.getContextSha();
     const previousSnapshot = bundleApi.readSavedSnapshot();
+    this.githubApi.info(`previousSnapshot: ${JSON.stringify(previousSnapshot)}`);
+
     const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
+    this.githubApi.info(`currentSnapshot: ${JSON.stringify(currentSnapshot)}`);
+
     const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
-    this.githubApi.info(`Compared repo snapshots: ${JSON.stringify(changedRefs)}`);
+    this.githubApi.info(`changedRefs: ${JSON.stringify(changedRefs)}`);
 
     const headSha = await bundleApi.getHeadSha();
     const transportRef = bundleApi.getTransportRef(bundleName);
@@ -87,7 +91,7 @@ export class GitBundleAction implements GitAction {
 
     const revisionSpecs = await bundleApi.buildRevisionSpecs(githubSha, transportRef, changedRefs);
     this.githubApi.info(
-      `Bundle revision specs (count=${revisionSpecs.length}): ${revisionSpecs.join(', ') || '(empty)'}`
+      `Bundle revision specs (count=${revisionSpecs.length}): ${JSON.stringify(revisionSpecs)}`
     );
 
     const bundlePath = path.join(tempDir, bundleName);
