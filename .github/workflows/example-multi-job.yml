@@ -15,8 +15,6 @@ jobs:
 
       - name: Setup git-bundle
         uses: rb-mwindh/git-bundle@develop
-        with:
-          bundle: release
 
       - name: Compute next version
         id: compute
@@ -41,8 +39,6 @@ jobs:
 
       - name: Setup git-bundle
         uses: rb-mwindh/git-bundle@develop
-        with:
-          bundle: release
 
       - name: Verify history
         run: |
@@ -64,8 +60,6 @@ jobs:
 
       - name: Setup git-bundle
         uses: rb-mwindh/git-bundle@develop
-        with:
-          bundle: release
 
       - name: Verify released version
         run: |
