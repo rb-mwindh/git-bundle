@@ -1,3 +1,10 @@
+# [1.0.0-rc.6](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.5...v1.0.0-rc.6) (2026-04-09)
+
+
+### Features
+
+* **git-api:** add `fetchBundle` function ([fc9cbc8](https://github.com/rb-mwindh/git-bundle/commit/fc9cbc8a511255e47cd582253e8bb86621845736))
+
 # [1.0.0-rc.5](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.4...v1.0.0-rc.5) (2026-04-09)
 
 
