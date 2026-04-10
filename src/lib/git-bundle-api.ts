@@ -67,7 +67,7 @@ export class GitBundleApi {
     const transportRef = this.getTransportRef(bundleName);
 
     const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});
-    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
+    this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
 
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
 
@@ -76,9 +76,10 @@ export class GitBundleApi {
       return;
     }
 
-    this.githubApi.debug(`Importing refs from bundle "${bundlePath}: \n * ${bundleRefs.join('\n * ')}`);
+    this.githubApi.info(`Importing refs from bundle "${bundlePath}: \n * ${bundleRefs.join('\n * ')}`);
     try {
-      const fetchResult = await this.gitApi.fetch(bundleRefs, bundlePath);
+      const fetchRefSpecs = this.gitApi.buildFetchRefSpecs(bundleRefs);
+      const fetchResult = await this.gitApi.fetch(fetchRefSpecs, bundlePath);
       this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.\n${this.formatFetchResult(fetchResult)}`);
     } catch (err) {
       throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);

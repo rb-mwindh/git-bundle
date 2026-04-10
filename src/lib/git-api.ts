@@ -1,6 +1,7 @@
 import {type FetchResult, type SimpleGit, simpleGit} from 'simple-git';
 import * as fs from 'node:fs/promises';
 import {RepoSnapshot} from "./types.js";
+import {FetchRefSpec, toFetchRefSpec} from "./fetch-ref-specs.js";
 
 export const DEFAULT_TRACKED_REFS = ['refs/tags/*', 'refs/notes/*'];
 
@@ -62,15 +63,17 @@ export class GitApi {
   /**
    * Converts tracked refs into force-fetch refspecs.
    */
-  buildFetchRefSpecs(trackedRefs: string[] = DEFAULT_TRACKED_REFS): string[] {
-    return trackedRefs.map(ref => `+${ref}:${ref}`);
+  buildFetchRefSpecs(trackedRefs: string[] = DEFAULT_TRACKED_REFS): FetchRefSpec[] {
+    return trackedRefs
+      .map(toFetchRefSpec)
+      .filter((arg): arg is FetchRefSpec => Boolean(arg));
   }
 
   /**
    * Performs a regular force-fetch from origin.
    */
-  async fetch(fetchRefSpecs: string[] = [], origin = 'origin'): Promise<FetchResult> {
-    return this.git.fetch(['--force', origin, ...fetchRefSpecs]);
+  async fetch(refSpecs: FetchRefSpec[] = [], origin = 'origin'): Promise<FetchResult> {
+    return this.git.fetch(['--force', origin, ...refSpecs]);
   }
 
   /**
