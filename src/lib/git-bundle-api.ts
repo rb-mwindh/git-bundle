@@ -64,12 +64,10 @@ export class GitBundleApi {
   }
 
   async importBundle(bundlePath: string, bundleName: string): Promise<void> {
-    this.githubApi.info('Fetching Git bundle refs...');
-
     const transportRef = this.getTransportRef(bundleName);
 
-    const stats = fs.statSync(bundlePath);
-    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats.isFile()}, size: ${stats.size} bytes.`)
+    const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});
+    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
 
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
 
@@ -175,9 +173,9 @@ export class GitBundleApi {
 
     try {
       const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
-      this.githubApi.debug(result);
+      this.githubApi.debug(JSON.stringify(result));
 
-      const stat = fs.statSync(bundlePath);
+      const stat = fs.statSync(bundlePath, { throwIfNoEntry: false }) || ({ size: 0 });
       this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
 
       return stat.size > 0;

@@ -63,6 +63,7 @@ export class GitBundleAction implements GitAction {
       const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
       this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
 
+      this.githubApi.info('Fetching Git bundle refs...');
       await bundleApi.importBundle(bundlePath, bundleName);
     }
 
