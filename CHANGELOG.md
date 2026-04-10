@@ -1,3 +1,10 @@
+# [1.0.0-rc.8](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.7...v1.0.0-rc.8) (2026-04-10)
+
+
+### Bug Fixes
+
+* **git-bundle:** validate and convert bundle refs to fetch refspecs ([25952d9](https://github.com/rb-mwindh/git-bundle/commit/25952d9dfab4d5163688a74236c16fa304bf8a9b))
+
 # [1.0.0-rc.7](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.6...v1.0.0-rc.7) (2026-04-10)
 
 

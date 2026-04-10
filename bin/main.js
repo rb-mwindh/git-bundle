@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.6 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.7 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
@@ -106,6 +106,21 @@ var GithubApi = class {
 
 // src/lib/git-api.ts
 import { simpleGit } from "simple-git";
+
+// src/lib/fetch-ref-specs.ts
+var RE_GITREF = /^refs\/[^:\s]+$/;
+var RE_FETCH_REFSPEC = /^\+?refs\/[^:\s]+:refs\/[^:\s]+$/;
+function isGitRef(arg) {
+  return typeof arg === "string" && RE_GITREF.test(arg);
+}
+function isFetchRefSpec(arg) {
+  return typeof arg === "string" && RE_FETCH_REFSPEC.test(arg);
+}
+function toFetchRefSpec(ref) {
+  return isFetchRefSpec(ref) ? ref : isGitRef(ref) ? `+${ref}:${ref}` : void 0;
+}
+
+// src/lib/git-api.ts
 var DEFAULT_TRACKED_REFS = ["refs/tags/*", "refs/notes/*"];
 var GitApi = class {
   git;
@@ -129,13 +144,13 @@ var GitApi = class {
    * Converts tracked refs into force-fetch refspecs.
    */
   buildFetchRefSpecs(trackedRefs = DEFAULT_TRACKED_REFS) {
-    return trackedRefs.map((ref) => `+${ref}:${ref}`);
+    return trackedRefs.map(toFetchRefSpec).filter((arg) => Boolean(arg));
   }
   /**
    * Performs a regular force-fetch from origin.
    */
-  async fetch(fetchRefSpecs = [], origin = "origin") {
-    return this.git.fetch(["--force", origin, ...fetchRefSpecs]);
+  async fetch(refSpecs = [], origin = "origin") {
+    return this.git.fetch(["--force", origin, ...refSpecs]);
   }
   /**
    * Performs an unshallow force-fetch from origin.
@@ -289,16 +304,17 @@ var GitBundleApi = class {
   async importBundle(bundlePath, bundleName) {
     const transportRef = this.getTransportRef(bundleName);
     const stats = fs.statSync(bundlePath, { throwIfNoEntry: false });
-    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`);
+    this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`);
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
       return;
     }
-    this.githubApi.debug(`Importing refs from bundle "${bundlePath}: 
+    this.githubApi.info(`Importing refs from bundle "${bundlePath}: 
  * ${bundleRefs.join("\n * ")}`);
     try {
-      const fetchResult = await this.gitApi.fetch(bundleRefs, bundlePath);
+      const fetchRefSpecs = this.gitApi.buildFetchRefSpecs(bundleRefs);
+      const fetchResult = await this.gitApi.fetch(fetchRefSpecs, bundlePath);
       this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.
 ${this.formatFetchResult(fetchResult)}`);
     } catch (err) {
