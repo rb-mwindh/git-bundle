@@ -1,3 +1,35 @@
+# [2.0.0](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0...v2.0.0) (2026-04-10)
+
+
+* feat(git)!: return structured bundle creation result and handle upload failures ([10d48d0](https://github.com/rb-mwindh/git-bundle/commit/10d48d06572cc911da8f0744173d44ab7b22fcd9))
+* refactor(git)!: move bundle import flow into GitBundleApi ([f112e90](https://github.com/rb-mwindh/git-bundle/commit/f112e909005181c9e51b9055b8a461154ea65c20))
+
+
+### Bug Fixes
+
+* **git-bundle:** validate and convert bundle refs to fetch refspecs ([25952d9](https://github.com/rb-mwindh/git-bundle/commit/25952d9dfab4d5163688a74236c16fa304bf8a9b))
+* **github-api:** add diagnostic logging for artifact download path ([c5b5061](https://github.com/rb-mwindh/git-bundle/commit/c5b5061ebad501d8fcf31e4db76f79d257948313))
+
+
+### Features
+
+* **action:** rework implementation layers ([bd24fa0](https://github.com/rb-mwindh/git-bundle/commit/bd24fa096a205872bce6051af2ac975cfbfa8e1c))
+* **action:** use `main` instead of `pre` ([c626206](https://github.com/rb-mwindh/git-bundle/commit/c626206137cdf3b9c24da4a2c644321210b77ab7))
+* **git-api:** allow fetch origin override for bundle imports ([5d93e9a](https://github.com/rb-mwindh/git-bundle/commit/5d93e9addcdf14e4f09c7ed115edf095cf70a2dc))
+* **git-bundle-api:** print all refs for debugging purposes ([ade8385](https://github.com/rb-mwindh/git-bundle/commit/ade8385eaa36d0dfb88dc21f08a9dac907695bca))
+* **git-bundle:** reimplement bundle workflow with layered action and API classes ([b54e1dc](https://github.com/rb-mwindh/git-bundle/commit/b54e1dc6dc1c91cba968839b3282e797af8fa04d))
+* **inputs:** make bundle name optional with default value ([9e80a29](https://github.com/rb-mwindh/git-bundle/commit/9e80a29c0e4b28a0a36baa825579648721356996))
+* **inputs:** make bundle name optional with default value ([8ff5515](https://github.com/rb-mwindh/git-bundle/commit/8ff551524e74d26bf6d250bb0f1b858986af9228))
+
+
+### BREAKING CHANGES
+
+* `GitApi.createBundle()` now returns an object with either result or error instead of the raw git output (`{ result: string } | { error: Error }`).
+* `GitBundleApi.importBundle()` now returns `Promise<void>`
+instead of `Promise<ImportBundleResult>`, and `GitApi.importBundle()` has been
+removed in favor of `fetch()`, `resolveRef()`, `checkout()`, and `listBundleRefs()`.
+* **git-bundle:** Just want to bump the major version
+
 # [1.0.0-rc.8](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.7...v1.0.0-rc.8) (2026-04-10)
 
 
