@@ -88,6 +88,22 @@ describe('GitApi', () => {
       await api.fetch();
       expect(git.fetch).toHaveBeenCalledWith(['--force', 'origin']);
     });
+
+    it('calls force fetch with bundle file and supplied refspecs', async () => {
+      const fetchResult = {raw: 'ok'} as FetchResult;
+      git.fetch.mockResolvedValue(fetchResult);
+
+      await expect(api.fetch(['+refs/tags/*:refs/tags/*'], '/path/to/file')).resolves.toBe(fetchResult);
+      expect(git.fetch).toHaveBeenCalledWith(['--force', '/path/to/file', '+refs/tags/*:refs/tags/*']);
+    });
+
+    it('calls force fetch with bundle file when no refspecs are supplied', async () => {
+      const fetchResult = {raw: 'ok'} as FetchResult;
+      git.fetch.mockResolvedValue(fetchResult);
+
+      await expect(api.fetch([], '/path/to/file')).resolves.toBe(fetchResult);
+      expect(git.fetch).toHaveBeenCalledWith(['--force', '/path/to/file']);
+    });
   });
 
   describe('fetchUnshallow', () => {
@@ -239,12 +255,11 @@ describe('GitApi', () => {
   });
 
   describe('createBundle', () => {
-    it('returns created=false when revision specs are empty', async () => {
+    it('returns `{ result: undefined }` when revision specs are empty', async () => {
       await expect(api.createBundle('/tmp/empty.bundle', [])).resolves.toEqual({
-        created: false,
-        bundlePath: '/tmp/empty.bundle',
+        result: undefined
       });
-      expect(git.raw).not.toHaveBeenCalled();
+      expect(git.raw).toHaveBeenCalledWith(['bundle', 'create', '/tmp/empty.bundle']);
     });
 
     it('returns created=true when bundle file has content', async () => {
@@ -252,11 +267,10 @@ describe('GitApi', () => {
       const bundlePath = join(tempDir, 'repo.bundle');
       await writeFile(bundlePath, 'data');
 
-      git.raw.mockResolvedValue('');
+      git.raw.mockResolvedValue('test');
 
       await expect(api.createBundle(bundlePath, ['refs/heads/main'])).resolves.toEqual({
-        created: true,
-        bundlePath,
+        result: 'test'
       });
       expect(git.raw).toHaveBeenCalledWith(['bundle', 'create', bundlePath, 'refs/heads/main']);
 
@@ -271,32 +285,18 @@ describe('GitApi', () => {
       git.raw.mockResolvedValue('');
 
       await expect(api.createBundle(bundlePath, ['refs/heads/main'])).resolves.toEqual({
-        created: false,
-        bundlePath,
+        result: ''
       });
 
       await rm(tempDir, {recursive: true, force: true});
     });
 
-    it.each([
-      'Refusing to create empty bundle',
-      'no new commits',
-      'no new revisions',
-    ])('returns created=false for known empty bundle error: %s', async (message) => {
-      git.raw.mockRejectedValue(new Error(message));
-
-      await expect(api.createBundle('/tmp/repo.bundle', ['refs/heads/main'])).resolves.toEqual({
-        created: false,
-        bundlePath: '/tmp/repo.bundle',
-      });
-    });
-
-    it('rethrows unknown errors', async () => {
-      git.raw.mockRejectedValue(new Error('unexpected failure'));
+    it('returns `{ error: Error }` for unknown bundle create errors', async () => {
+      const error = new Error('Unknown Error');
+      git.raw.mockRejectedValue(error);
 
       await expect(api.createBundle('/tmp/repo.bundle', ['refs/heads/main']))
-        .rejects
-        .toThrow('unexpected failure');
+        .resolves.toEqual({ error });
     });
   });
 });

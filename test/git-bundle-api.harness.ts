@@ -16,8 +16,8 @@ export function createGitBundleApiHarness() {
   const getHeadSha = jest.spyOn(GitBundleApi.prototype, 'getHeadSha').mockResolvedValue('head-sha');
   const updateRef = jest.spyOn(GitBundleApi.prototype, 'updateRef').mockResolvedValue(undefined);
   const getCommitCountSince = jest.spyOn(GitBundleApi.prototype, 'getCommitCountSince').mockResolvedValue(1);
-  const buildRevisionSpecs = jest.spyOn(GitBundleApi.prototype, 'buildRevisionSpecs').mockReturnValue(['spec']);
-  const createBundle = jest.spyOn(GitBundleApi.prototype, 'createBundle').mockResolvedValue({created: false, bundlePath: '/tmp/release'});
+  const buildRevisionSpecs = jest.spyOn(GitBundleApi.prototype, 'buildRevisionSpecs').mockResolvedValue(['spec']);
+  const createBundle = jest.spyOn(GitBundleApi.prototype, 'createBundle').mockResolvedValue(true);
 
   return {
     ensureGitRepository,

@@ -33,8 +33,8 @@ export function createGithubApiHarness(options: GithubApiHarnessOptions = {}) {
   const inputs: Record<string, string> = {
     bundle: 'release',
     refs: 'refs/tags/*,refs/notes/*',
-    path: process.cwd(),
-    tempDir: os.tmpdir(),
+    path: '/',
+    tempDir: 'C:\\temp',
     ...options.inputs,
   };
 
@@ -42,7 +42,7 @@ export function createGithubApiHarness(options: GithubApiHarnessOptions = {}) {
   githubApi.getState.mockReturnValue(options.state ?? JSON.stringify({'refs/tags/v1.0.0': 'old-sha'}));
   githubApi.getContextSha.mockReturnValue(options.contextSha ?? 'context-sha');
   githubApi.getArtifact.mockResolvedValue(null);
-  githubApi.downloadArtifact.mockResolvedValue('/tmp/release');
+  githubApi.downloadArtifact.mockResolvedValue('C:\\temp\\release');
   githubApi.deleteArtifact.mockResolvedValue(undefined as never);
   githubApi.uploadArtifact.mockResolvedValue(undefined as never);
 

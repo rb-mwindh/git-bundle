@@ -3,6 +3,7 @@ import {type Artifact} from '@actions/artifact';
 import {GitBundleAction} from './git-bundle-action.js';
 import {createGitBundleApiHarness} from '../../test/git-bundle-api.harness.js';
 import {createGithubApiHarness} from '../../test/github-api.harness.js';
+import {GitBundleApi} from './git-bundle-api.js';
 
 function createHarness() {
   const {githubApi, inputs} = createGithubApiHarness();
@@ -54,6 +55,7 @@ describe('GitBundleAction.main', () => {
       digest: 'sha256:test',
     } as Artifact;
     githubApi.getArtifact.mockResolvedValue(artifact);
+    githubApi.downloadArtifact.mockResolvedValue('/tmp/release');
 
     await action.main();
 
@@ -70,6 +72,7 @@ describe('GitBundleAction.post', () => {
 
   it('skips upload when no bundle is created', async () => {
     const {action, updateRef, githubApi} = createHarness();
+    jest.spyOn(GitBundleApi.prototype, 'createBundle').mockResolvedValue(false);
 
     await action.post();
 
@@ -81,12 +84,14 @@ describe('GitBundleAction.post', () => {
   });
 
   it('uploads bundle when createBundle returns created=true', async () => {
+    jest.spyOn(GitBundleApi.prototype, 'createBundle').mockResolvedValue(true);
     const {action, createBundle, githubApi, inputs} = createHarness();
-    createBundle.mockResolvedValue({created: true, bundlePath: '/tmp/release'});
+    createBundle.mockResolvedValue(true);
+    githubApi.uploadArtifact.mockResolvedValue({});
 
     await action.post();
 
     expect(githubApi.deleteArtifact).toHaveBeenCalledWith('release');
-    expect(githubApi.uploadArtifact).toHaveBeenCalledWith('release', ['/tmp/release'], inputs['tempDir']!);
+    expect(githubApi.uploadArtifact).toHaveBeenCalledWith('release', ['C:\\temp\\release'], inputs['tempDir']!);
   });
 });

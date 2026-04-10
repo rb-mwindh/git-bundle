@@ -103,15 +103,10 @@ describe('GitBundleApi', () => {
     );
   });
 
-  it('buildRevisionSpecs returns empty list when no commits and no changed refs exist', () => {
+  it('buildRevisionSpecs returns empty list when no commits and no changed refs exist', async() => {
     const {api} = createHarness();
 
-    const specs = api.buildRevisionSpecs({
-      githubSha: 'base',
-      transportRef: 'refs/heads/release',
-      changedRefs: [],
-      commitCount: 0,
-    });
+    const specs = await api.buildRevisionSpecs('base', 'refs/heads/release', []);
 
     expect(specs).toEqual([]);
   });
