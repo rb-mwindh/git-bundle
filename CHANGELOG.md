@@ -1,3 +1,24 @@
+# [1.0.0-rc.7](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.6...v1.0.0-rc.7) (2026-04-10)
+
+
+* feat(git)!: return structured bundle creation result and handle upload failures ([10d48d0](https://github.com/rb-mwindh/git-bundle/commit/10d48d06572cc911da8f0744173d44ab7b22fcd9))
+
+
+### Features
+
+* **git-api:** allow fetch origin override for bundle imports ([5d93e9a](https://github.com/rb-mwindh/git-bundle/commit/5d93e9addcdf14e4f09c7ed115edf095cf70a2dc))
+* **git-bundle-api:** print all refs for debugging purposes ([ade8385](https://github.com/rb-mwindh/git-bundle/commit/ade8385eaa36d0dfb88dc21f08a9dac907695bca))
+
+
+### Reverts
+
+* Revert "feat(git-api): add `fetchBundle` function" ([e67c6a2](https://github.com/rb-mwindh/git-bundle/commit/e67c6a2bc281d8876c6f00d3a00ef76e02a03870))
+
+
+### BREAKING CHANGES
+
+* `GitApi.createBundle()` now returns an object with either result or error instead of the raw git output (`{ result: string } | { error: Error }`).
+
 # [1.0.0-rc.6](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0-rc.5...v1.0.0-rc.6) (2026-04-09)
 
 

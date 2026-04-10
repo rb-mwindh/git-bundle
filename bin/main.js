@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.5 | MIT */
+/*! @rb-mwindh/git-bundle v1.0.0-rc.6 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
@@ -134,11 +134,8 @@ var GitApi = class {
   /**
    * Performs a regular force-fetch from origin.
    */
-  async fetch(fetchRefSpecs = []) {
-    return this.git.fetch(["--force", "origin", ...fetchRefSpecs]);
-  }
-  async fetchBundle(bundlePath, fetchRefSpecs = []) {
-    return this.git.fetch(["--force", bundlePath, "origin", ...fetchRefSpecs]);
+  async fetch(fetchRefSpecs = [], origin = "origin") {
+    return this.git.fetch(["--force", origin, ...fetchRefSpecs]);
   }
   /**
    * Performs an unshallow force-fetch from origin.
@@ -170,6 +167,9 @@ var GitApi = class {
     }
     return refs;
   }
+  async showRef() {
+    return this.git.raw(["show-ref"]);
+  }
   /**
    * Returns the SHA of the current HEAD commit.
    */
@@ -199,7 +199,12 @@ var GitApi = class {
    * Returns created=false if specs are empty or git reports no new content.
    */
   async createBundle(bundlePath, revisionSpecs) {
-    return this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
+    try {
+      const result = await this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
+      return { result };
+    } catch (error) {
+      return { error };
+    }
   }
   /**
    * Lists all refs contained in a Git bundle file.
@@ -282,10 +287,9 @@ var GitBundleApi = class {
     return `refs/heads/${bundleName}`;
   }
   async importBundle(bundlePath, bundleName) {
-    this.githubApi.info("Fetching Git bundle refs...");
     const transportRef = this.getTransportRef(bundleName);
-    const stats = fs.statSync(bundlePath);
-    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats.isFile()}, size: ${stats.size} bytes.`);
+    const stats = fs.statSync(bundlePath, { throwIfNoEntry: false });
+    this.githubApi.debug(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`);
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
@@ -294,12 +298,15 @@ var GitBundleApi = class {
     this.githubApi.debug(`Importing refs from bundle "${bundlePath}: 
  * ${bundleRefs.join("\n * ")}`);
     try {
-      const fetchResult = await this.gitApi.fetchBundle(bundlePath, bundleRefs);
+      const fetchResult = await this.gitApi.fetch(bundleRefs, bundlePath);
       this.githubApi.info(`Git bundle "${bundlePath}" imported successfully.
 ${this.formatFetchResult(fetchResult)}`);
     } catch (err) {
       throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
     }
+    this.githubApi.info("Printing all refs for debugging purposes...");
+    this.githubApi.info(await this.gitApi.showRef());
+    this.githubApi.info("Done.");
     this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
     const transportedHead = await this.gitApi.resolveRef(transportRef);
     if (!transportedHead) {
@@ -362,8 +369,8 @@ ${this.formatFetchResult(fetchResult)}`);
     }
     try {
       const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
-      this.githubApi.debug(result);
-      const stat = fs.statSync(bundlePath);
+      this.githubApi.debug(JSON.stringify(result));
+      const stat = fs.statSync(bundlePath, { throwIfNoEntry: false }) || { size: 0 };
       this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
       return stat.size > 0;
     } catch (error) {
@@ -437,6 +444,7 @@ var GitBundleAction = class {
       );
       const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
       this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
+      this.githubApi.info("Fetching Git bundle refs...");
       await bundleApi.importBundle(bundlePath, bundleName);
     }
     const snapshot = await bundleApi.createSnapshot(trackedRefs);
@@ -478,8 +486,13 @@ var GitBundleAction = class {
         );
       }
     }
-    const { id, size, digest } = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
-    this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
+    const uploadResult = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
+    if (uploadResult) {
+      const { id, size, digest } = uploadResult;
+      this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
+    } else {
+      this.githubApi.info("Failed to upload Git bundle artifact.");
+    }
   }
   readContext() {
     const bundleName = this.githubApi.getInput("bundle", { required: false }) || "release";
