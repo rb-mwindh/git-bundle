@@ -1,10 +1,7 @@
 import * as core from '@actions/core';
-import {repo} from './lib/repo.js';
+import {GitBundleAction} from './lib/git-bundle-action.js';
 
-(async () => {
-  const bundleName = core.getInput('bundle', {required: true});
-  await repo.main(bundleName);
-})().catch((error: unknown) => {
+new GitBundleAction().main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   core.setFailed(message);
 });

@@ -1,90 +1,104 @@
 # git-bundle
 
-Transport git changes across multiple GitHub Actions jobs without pushing to the remote repository. Uses git bundles as artifacts to move commits, tags, and notes between jobs in a single run.
+Transport Git changes across GitHub Actions jobs without pushing anything back to the remote repository. The action uses
+Git bundles stored as workflow artifacts to move commits and selected refs between jobs in the same workflow run.
 
 ## Features
 
-- **Zero remote pushes**: All changes stay local until you're ready
-- **Multi-job workflows**: Seamlessly pass commits, tags, and notes between jobs
-- **Automatic PRE/POST phases**: No manual setup required—action handles both phases automatically
-- **Robust error handling**: Won't fail if there are no changes, no previous artifact, or bundle is empty
-- **Complete history support**: Automatically unshallows repositories for full history access
-- **Dynamic ref discovery**: Automatically detects and transports all tags and notes
+- **No remote pushes**: Changes stay local to the workflow unless you push them yourself.
+- **Cross-job Git state transfer**: Restore commits and tracked refs in downstream jobs.
+- **Automatic restore and persist flow**: The action restores state in the `main` hook and uploads a new bundle in the
+  `post` hook.
+- **Shallow checkout support**: Tries to unshallow the repository before working with tracked refs.
+- **Configurable tracked refs**: Tracks tags and notes by default and can be customized.
 
-## Supported Git Objects
+## What gets transported
 
-- **Commits**: All new commits since the previous job
-- **Tags**: All refs under `refs/tags/*` are dynamically detected and transported
-- **Notes**: All refs under `refs/notes/*` are dynamically detected and transported
-- **HEAD state**: Current HEAD is always transported via `refs/head/<bundle>` for seamless continuation
+- **Commits** reachable from the transport ref `refs/heads/<bundle>`
+- **Tracked refs** matching the configured ref patterns (defaults: `refs/tags/*`, `refs/notes/*`)
+- **Current HEAD** through the transport ref `refs/heads/<bundle>`
 
 ## Usage
 
-Add the action after `actions/checkout` in your workflow:
+Run the action after `actions/checkout` in every job that should participate in the bundle chain:
 
 ```yaml
 - uses: actions/checkout@v4
 
 - uses: rb-mwindh/git-bundle@v1
   with:
-    bundle: my-bundle
+    bundle: release-state
 
 # ... your job logic (commits, tags, notes) ...
 
-# POST phase runs automatically at job end
+# The post hook runs automatically at the end of the job.
 ```
 
-## Input Parameters
+## Inputs
 
-- `bundle` (required): Bundle artifact identifier
-  - Used for: bundle filename `<bundle>.bundle`, artifact name `<bundle>`, ref `refs/head/<bundle>`
+All inputs are optional.
 
-## How It Works
+| Name      | Default                    | Description                                                                                                                                                    |
+|-----------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `bundle`  | `release`                  | Bundle identifier. Used as the artifact name, the bundle file name, and the transport ref suffix in `refs/heads/<bundle>`.                                     |
+| `path`    | `${{ github.workspace }}`  | Path to the Git repository. At runtime the action falls back to the current working directory if the workspace value is unavailable.                           |
+| `refs`    | `refs/tags/*,refs/notes/*` | Comma-separated list of tracked ref patterns. These refs are fetched, snapshotted, and included in bundle generation.                                          |
+| `tempDir` | `${{ runner.temp }}`       | Temporary directory used for artifact download, bundle creation, and artifact upload. At runtime the action falls back to the system temp directory if needed. |
 
-### PRE Phase (beginning of job)
+## Lifecycle
 
-1. Ensures a git repository exists after `actions/checkout`
-2. Ensures full history is available locally (unshallow if needed)
-3. Attempts to download the previous artifact `<bundle>`
-4. Validates and imports `<bundle>.bundle` if present
-5. Checks out `refs/head/<bundle>` when transported state exists
-6. Captures a snapshot of `refs/tags/*` and `refs/notes/*`
-7. Saves the snapshot and `github.context.sha` into action state
+The action metadata uses the GitHub Actions `main` and `post` hooks.
 
-### MAIN Phase
+### `main` hook
 
-The main phase is intentionally a no-op.
+When the step runs, the action:
 
-### POST Phase (end of job)
+1. Reads inputs and resolves runtime defaults.
+2. Verifies that the configured repository path is a Git repository.
+3. Fetches the tracked refs from `origin` and tries `--unshallow` first when the repository is shallow.
+4. Looks for an existing artifact with the configured bundle name.
+5. If an artifact exists, downloads it into `tempDir`, imports the bundle, and checks out the transported head.
+6. Creates a snapshot of the currently tracked refs.
+7. Saves that snapshot into GitHub Actions state for use in the `post` hook.
 
-1. Captures a second snapshot of `refs/tags/*` and `refs/notes/*`
-2. Diffs the snapshot against PRE to identify changed refs
-3. Updates `refs/head/<bundle>` to the current `HEAD`
-4. Creates an incremental bundle using changed refs and new commits since `github.context.sha`
-5. Uploads the result as artifact `<bundle>`
-6. If there is nothing to bundle, logs a no-op notice and skips upload
+### `post` hook
 
-## Example Workflow
+At job teardown, the action:
+
+1. Recreates the action context from inputs.
+2. Verifies that the repository still exists.
+3. Loads the saved tracked-ref snapshot.
+4. Creates a fresh snapshot and determines which tracked refs changed.
+5. Updates `refs/heads/<bundle>` to the current `HEAD`.
+6. Computes bundle revision specs from:
+
+- the commit range `github.context.sha..refs/heads/<bundle>` when new commits exist,
+- the transport ref itself, and
+- tracked refs whose current SHA changed.
+
+7. Creates a bundle file at `<tempDir>/<bundle>`.
+8. Replaces any existing artifact with the same name and uploads the new bundle when it contains content.
+
+If there is nothing new to bundle, the `post` hook logs a notice and skips the upload.
+
+## Example workflow
 
 ```yaml
 name: Multi-Job Processing
 
-on: [push]
+on: [ push ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Recommended for complete history
 
       - uses: rb-mwindh/git-bundle@v1
         with:
           bundle: release-state
 
-      # Build and create tags/commits
-      - name: Build and Release
+      - name: Build and release
         run: |
           npm install
           npm run build
@@ -97,18 +111,10 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: rb-mwindh/git-bundle@v1
         with:
           bundle: release-state
-
-      # At this point, working directory contains:
-      # - All commits from build job
-      # - All tags created in build job
-      # - All notes from build job
-      # - HEAD points to the final commit from build
 
       - name: Publish
         run: |
@@ -116,98 +122,74 @@ jobs:
           npm run publish
 ```
 
-## Edge Cases Handled
+## Behavior and edge cases
 
-The action gracefully handles these scenarios without failing:
+The current implementation handles these cases intentionally:
 
-- **First job**: No previous artifact found → action starts fresh with baseline
-- **No changes**: No new commits or refs → action creates no bundle, continues normally
-- **Empty bundle**: Bundle file exists but contains no relevant objects → action skips upload
-- **Invalid bundle**: Corrupted or malformed bundle → action logs warning, continues
-- **Shallow repository**: `actions/checkout` cloned without history → action unshallows automatically
-- **Multiple runs in same job**: Action can be called multiple times safely
-- **Missing refs**: Tags or notes may not exist → action adapts gracefully
+- **First job in a chain**: No previous artifact is found, so the action starts with a fresh baseline.
+- **Shallow repository**: The action tries `git fetch --force --unshallow origin ...` first and falls back to a regular
+  fetch if unshallowing fails.
+- **No new bundle content**: The `post` hook skips artifact upload instead of failing.
+- **Missing tracked refs**: Snapshot creation tolerates missing namespaces such as absent tags or notes.
+- **Artifact replacement**: Before upload, the action attempts to delete an existing artifact with the same name.
 
-## State Management
+## State management
 
-The action uses GitHub Actions state (`saveState`/`getState`) to communicate between PRE and POST phases:
+The action currently persists one state value between `main` and `post`:
 
-- `git-bundle-github-sha`: `github.context.sha` captured during PRE
-- `git-bundle-snapshot`: JSON snapshot of `refs/tags/*` and `refs/notes/*`
+- `git-bundle-snapshot`: JSON snapshot of the tracked refs from the `main` hook
 
-This state is job-specific and automatically cleaned up by GitHub Actions.
+`github.context.sha` is read directly during the `post` hook and is not stored in Actions state.
 
-## Technical Details
+## Notes and limitations
 
-### Bundle Format
-
-Bundles are created using incremental revision specs when possible:
-- Commit range `github.context.sha..refs/head/<bundle>` when new commits exist
-- Transport ref `refs/head/<bundle>`
-- All changed refs under `refs/tags/*` and `refs/notes/*`
-
-If there are no changes, the action treats POST as a no-op and skips artifact upload. PRE already handles missing artifacts gracefully.
-
-### Refs Organization
-
-- **Transport ref**: `refs/head/<bundle>` - tracks current HEAD across jobs
-- **Tags**: `refs/tags/*` - all git tags
-- **Notes**: `refs/notes/*` - all git notes
-
-### Failure Modes
-
-The action is designed to never fail due to:
-- Missing previous artifacts
-- No new changes to transport
-- Empty or malformed bundles
-- Shallow repositories
-- Invalid refs
-
-Instead, it logs appropriate `info` or `warning` messages and allows the job to continue. Only critical errors (e.g., input not provided) cause failure.
+- The action metadata does **not** define a separate GitHub Actions `pre` entrypoint. Internally, the `GitBundleAction`
+  class exposes `pre()`, `main()`, and `post()`, but only `main` and `post` are wired in `action.yml`.
+- Bundle files are currently created without a `.bundle` suffix. The artifact name and file name are both the configured
+  `bundle` value.
+- Ref deletions are not bundled. The diff logic only considers tracked refs that exist in the current snapshot.
+- Bundle import errors are not ignored. For example, a malformed bundle can still fail the action.
+- The action is intended to exchange artifacts within a single workflow run.
 
 ## Development
 
 ### Build
 
-This project uses [esbuild](https://github.com/evanw/esbuild) and [esbuild-plugin-license](https://github.com/bcherny/esbuild-plugin-license) for bundling and license generation.
+This project uses [esbuild](https://github.com/evanw/esbuild)
+and [esbuild-plugin-license](https://github.com/bcherny/esbuild-plugin-license) for bundling and license generation.
 
 ```sh
 npm ci
 npm run build
 ```
 
-- Bundles are generated in `bin/pre.js`, `bin/main.js`, and `bin/post.js`
-- License files are generated alongside each runtime bundle
+- Runtime bundles are generated in `bin/main.js` and `bin/post.js`.
+- License files are generated alongside each runtime bundle.
 
-### Project Structure
+### Project structure
 
-```
+```text
 src/
-  pre.ts                 # PRE phase entry point
-  main.ts                # MAIN phase entry point (no-op)
-  post.ts                # POST phase entry point
+  main.ts                    # GitHub Actions main entrypoint
+  post.ts                    # GitHub Actions post entrypoint
   lib/
-    repo.ts              # Single source of truth for git-bundle logic
+    git-bundle-action.ts     # Orchestrates main/post lifecycle
+    git-bundle-api.ts        # High-level bundle operations
+    git-api.ts               # Low-level Git operations
+    github-api.ts            # Low-level GitHub Actions operations
 ```
 
-### Key Technologies
+### Key technologies
 
-- **simple-git**: Robust git operations
-- **@actions/core**: GitHub Actions API
-- **@actions/artifact**: Artifact management
+- **simple-git**: Git command wrapper
+- **@actions/core**: Inputs, logging, state, and failure handling
+- **@actions/artifact**: Artifact download, upload, and deletion
 - **TypeScript**: Type-safe implementation
-- **esbuild**: Bundling for GitHub Actions
-
-## Limitations
-
-1. **Artifacts across runs**: Only works within a single GitHub Actions run (not across different run IDs)
-2. **Size limits**: Artifacts are subject to GitHub's storage limits (typically 5GB per run)
-3. **Shallow clones**: Initial `actions/checkout` may be shallow; action auto-corrects this
-4. **Large bundles**: Very large repositories may produce large bundles; consider splitting workflows
+- **esbuild**: Action bundle generation
 
 ## License
 
 MIT © Markus Windhager
 
-The license files in the `bin/` directory include the licenses of all used third-party dependencies.
+The license files in `bin/` include the licenses of all used third-party dependencies.
 

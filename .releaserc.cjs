@@ -8,7 +8,8 @@ module.exports = {
         "next",
         "next-major",
         { name: "beta", prerelease: true },
-        { name: "alpha", prerelease: true }
+        { name: "alpha", prerelease: true },
+        { name: "develop", prerelease: "rc", channel: "develop" }
     ],
 
     plugins: [
