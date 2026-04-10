@@ -111,6 +111,10 @@ export class GitApi {
     return refs;
   }
 
+  async showRef(): Promise<string> {
+    return this.git.raw(['show-ref'])
+  }
+
   /**
    * Returns the SHA of the current HEAD commit.
    */

@@ -84,6 +84,10 @@ export class GitBundleApi {
       throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
     }
 
+    this.githubApi.info('Printing all refs for debugging purposes...');
+    this.githubApi.info(await this.gitApi.showRef());
+    this.githubApi.info('Done.');
+
     this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
     const transportedHead = await this.gitApi.resolveRef(transportRef);
 
