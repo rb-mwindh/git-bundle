@@ -69,8 +69,8 @@ export class GitApi {
   /**
    * Performs a regular force-fetch from origin.
    */
-  async fetch(fetchRefSpecs: string[] = []): Promise<FetchResult> {
-    return this.git.fetch(['--force', 'origin', ...fetchRefSpecs]);
+  async fetch(fetchRefSpecs: string[] = [], origin = 'origin'): Promise<FetchResult> {
+    return this.git.fetch(['--force', origin, ...fetchRefSpecs]);
   }
 
   /**
