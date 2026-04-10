@@ -115,8 +115,13 @@ export class GitBundleAction implements GitAction {
       }
     }
 
-    const { id, size, digest } = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
-    this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
+    const uploadResult = await this.githubApi.uploadArtifact(bundleName, [bundlePath], tempDir);
+    if (uploadResult) {
+      const { id, size, digest } = uploadResult;
+      this.githubApi.info(`Successfully uploaded Git bundle artifact with id "${id}" (size: ${size} bytes, digest: ${digest})`);
+    } else {
+      this.githubApi.info('Failed to upload Git bundle artifact.');
+    }
   }
 
   private readContext() {

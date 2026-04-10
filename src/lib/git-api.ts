@@ -143,7 +143,12 @@ export class GitApi {
    * Returns created=false if specs are empty or git reports no new content.
    */
   async createBundle(bundlePath: string, revisionSpecs: string[]) {
-    return this.git.raw(['bundle', 'create', bundlePath, ...revisionSpecs]);
+    try {
+      const result = await this.git.raw(['bundle', 'create', bundlePath, ...revisionSpecs]);
+      return { result };
+    } catch (error) {
+      return { error }
+    }
   }
 
   /**
