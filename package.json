@@ -32,7 +32,7 @@
     "build:clean-package": "node -e \"const {rmSync}=require('node:fs'); ['bin/package.json','bin/package-lock.json'].forEach((file)=>rmSync(file,{force:true}));\""
   },
   "dependencies": {
-    "@actions/artifact": "^6.1.0",
+    "@actions/artifact": "^1.1.3",
     "@actions/core": "^3.0.0",
     "@actions/github": "^9.0.0",
     "simple-git": "^3.31.1"
