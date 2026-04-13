@@ -1,10 +1,10 @@
-/*! @rb-mwindh/git-bundle v2.0.0 | MIT */
+/*! @rb-mwindh/git-bundle v2.0.1 | MIT */
 
 // src/post.ts
 import * as core from "@actions/core";
 
 // src/lib/git-bundle-action.ts
-import * as os from "node:os";
+import * as os2 from "node:os";
 import * as path from "node:path";
 
 // src/lib/format-date.ts
@@ -35,8 +35,9 @@ function formatFileSize(sizeInBytes, fractionDigits = 1) {
 }
 
 // src/lib/github-api.ts
-import artifactClient from "@actions/artifact";
+import artifact from "@actions/artifact";
 import { context } from "@actions/github";
+import * as os from "node:os";
 import { join } from "node:path";
 import {
   debug,
@@ -50,6 +51,8 @@ import {
   warning
 } from "@actions/core";
 var GithubApi = class {
+  artifactClient = artifact.create();
+  artifactCache = /* @__PURE__ */ new Map();
   getInput(name, options) {
     return getInput(name, options);
   }
@@ -80,27 +83,79 @@ var GithubApi = class {
   getContextSha() {
     return context.sha;
   }
+  /**
+   * Emulates listArtifacts for backward compatibility.
+   * @actions/artifact@^1 provides no public listing API, so this always returns empty.
+   */
   async listArtifacts() {
-    return artifactClient.listArtifacts({ latest: true });
+    this.debug("listArtifacts unsupported by @actions/artifact@^1; returning empty.");
+    return { artifacts: [] };
   }
+  /**
+   * Probes for artifact existence by attempting download.
+   * Returns a compatibility artifact descriptor if found, null if missing.
+   */
   async getArtifact(name) {
-    const result = await this.listArtifacts();
-    return result.artifacts.find((artifact) => artifact.name === name) ?? null;
-  }
-  async downloadArtifact(artifact, targetDir) {
-    const result = await artifactClient.downloadArtifact(artifact.id, { path: targetDir });
-    if (!result?.downloadPath) {
-      throw new Error(`Artifact download returned no path for "${artifact.name}".`);
+    const cached = this.artifactCache.get(name);
+    if (cached) return cached.artifact;
+    const probeDir = process.env["RUNNER_TEMP"]?.trim() || os.tmpdir();
+    try {
+      const result = await this.artifactClient.downloadArtifact(name, probeDir);
+      if (result?.downloadPath) {
+        const bundlePath = join(result.downloadPath, name);
+        const compat = { id: 0, name, size: 0, digest: "unknown" };
+        this.artifactCache.set(name, { path: bundlePath, artifact: compat });
+        return compat;
+      }
+    } catch (error) {
+      if (this.isArtifactMissingError(error, name)) return null;
+      throw error;
     }
-    const bundlePath = join(result.downloadPath, artifact.name);
+    return null;
+  }
+  /**
+   * Downloads artifact by descriptor, using cache if probed via getArtifact.
+   */
+  async downloadArtifact(artifact2, targetDir) {
+    const cached = this.artifactCache.get(artifact2.name);
+    if (cached) {
+      this.debug(`Using cached path for "${artifact2.name}".`);
+      return cached.path;
+    }
+    let result;
+    try {
+      result = await this.artifactClient.downloadArtifact(artifact2.name, targetDir);
+    } catch (error) {
+      if (this.isArtifactMissingError(error, artifact2.name)) {
+        throw new Error(`Artifact "${artifact2.name}" not found.`);
+      }
+      throw error;
+    }
+    if (!result?.downloadPath) {
+      throw new Error(`Artifact download returned no path for "${artifact2.name}".`);
+    }
+    const bundlePath = join(result.downloadPath, artifact2.name);
     this.debug(`Artifact extraction path: ${result.downloadPath}, bundle file path: ${bundlePath}`);
     return bundlePath;
   }
   async uploadArtifact(name, files, rootDirectory, options) {
-    return artifactClient.uploadArtifact(name, files, rootDirectory, options);
+    const response = await this.artifactClient.uploadArtifact(name, files, rootDirectory, options);
+    return {
+      id: response.artifactName,
+      size: response.size,
+      digest: "unknown"
+    };
   }
-  async deleteArtifact(artifactName, options) {
-    return artifactClient.deleteArtifact(artifactName, options);
+  /**
+   * Deletes artifact by name.
+   * @actions/artifact@^1 provides no public delete API, so this is a no-op for GHES compatibility.
+   */
+  async deleteArtifact(_name) {
+    this.debug("deleteArtifact unsupported by @actions/artifact@^1; skipping.");
+  }
+  isArtifactMissingError(error, name) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes("Unable to find any artifacts") || msg.includes(`Unable to find an artifact with the name: ${name}`);
   }
 };
 
@@ -448,17 +503,17 @@ var GitBundleAction = class {
       );
     }
     this.githubApi.info(`Checking for existing artifact bundle "${bundleName}"...`);
-    const artifact = await this.githubApi.getArtifact(bundleName);
-    if (!artifact) {
+    const artifact2 = await this.githubApi.getArtifact(bundleName);
+    if (!artifact2) {
       this.githubApi.notice(
         `No previous artifact named "${bundleName}" found. This is expected in the first job.`
       );
     } else {
-      const createdAt = artifact.createdAt ? formatDate(artifact.createdAt) : "unknown";
+      const createdAt = artifact2.createdAt ? formatDate(artifact2.createdAt) : "unknown";
       this.githubApi.info(
-        `Artifact "${artifact.name}" found (id=${artifact.id}, size=${formatFileSize(artifact.size)}, createdAt=${createdAt}, digest=${artifact.digest}). Downloading...`
+        `Artifact "${artifact2.name}" found (id=${artifact2.id}, size=${formatFileSize(artifact2.size)}, createdAt=${createdAt}, digest=${artifact2.digest}). Downloading...`
       );
-      const bundlePath = await this.githubApi.downloadArtifact(artifact, tempDir);
+      const bundlePath = await this.githubApi.downloadArtifact(artifact2, tempDir);
       this.githubApi.info(`Downloaded artifact to ${bundlePath}.`);
       this.githubApi.info("Fetching Git bundle refs...");
       await bundleApi.importBundle(bundlePath, bundleName);
@@ -517,7 +572,7 @@ var GitBundleAction = class {
     const trackedRefsInput = this.githubApi.getInput("refs", { required: false });
     const trackedRefs = trackedRefsInput.split(",").map((ref) => ref.trim()).filter(Boolean);
     const repoPath = repoPathInput || process.env["GITHUB_WORKSPACE"]?.trim() || process.cwd();
-    const tempDir = tempDirInput || process.env["RUNNER_TEMP"]?.trim() || os.tmpdir();
+    const tempDir = tempDirInput || process.env["RUNNER_TEMP"]?.trim() || os2.tmpdir();
     return {
       bundleName,
       repoPath,
