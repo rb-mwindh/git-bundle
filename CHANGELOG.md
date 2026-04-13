@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/rb-mwindh/git-bundle/compare/v2.0.0...v2.0.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **deps:** downgrade `@actions/artifact` to v1 for GHES compatibility ([98a9d3b](https://github.com/rb-mwindh/git-bundle/commit/98a9d3b384e57c7272daaa5906fd2584833641e3))
+
 # [2.0.0](https://github.com/rb-mwindh/git-bundle/compare/v1.0.0...v2.0.0) (2026-04-10)
 
 

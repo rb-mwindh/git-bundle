@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v1.0.0-rc.8 | MIT */
+/*! @rb-mwindh/git-bundle v2.0.0 | MIT */
 
 // src/post.ts
 import * as core from "@actions/core";
