@@ -1,3 +1,10 @@
+## [2.0.2](https://github.com/rb-mwindh/git-bundle/compare/v2.0.1...v2.0.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* **github-api:** adapt `github-api` to `@actions/artifact@^1` API ([e17afa8](https://github.com/rb-mwindh/git-bundle/commit/e17afa80f1372a673061949bd55e2fdcf5335a2d))
+
 ## [2.0.2-rc.1](https://github.com/rb-mwindh/git-bundle/compare/v2.0.1...v2.0.2-rc.1) (2026-04-13)
 
 
