@@ -45,6 +45,14 @@ All inputs are optional.
 | `refs`    | `refs/tags/*,refs/notes/*` | Comma-separated list of tracked ref patterns. These refs are fetched, snapshotted, and included in bundle generation.                                          |
 | `tempDir` | `${{ runner.temp }}`       | Temporary directory used for artifact download, bundle creation, and artifact upload. At runtime the action falls back to the system temp directory if needed. |
 
+## Compatibility
+
+The action is designed to run on **GHES (GitHub Enterprise Server)** with `@actions/artifact@^1` limitations:
+
+- **Artifact listing is not supported**: The action probes for artifact existence by attempting download. If download fails with "artifact not found", the action continues with a fresh baseline.
+- **Artifact deletion is not performed**: `@actions/artifact@^1` provides no delete API. New uploads will replace outdated artifacts on subsequent runs.
+- **Artifact metadata is best-effort**: Fields like `id`, `size`, `digest`, and `createdAt` are populated with default/placeholder values since the v1 API does not expose comprehensive metadata.
+
 ## Lifecycle
 
 The action metadata uses the GitHub Actions `main` and `post` hooks.
