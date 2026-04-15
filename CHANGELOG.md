@@ -1,3 +1,16 @@
+# [2.1.0](https://github.com/rb-mwindh/git-bundle/compare/v2.0.2...v2.1.0) (2026-04-15)
+
+
+### Bug Fixes
+
+* **tsconfig:** remove exactOptionalPropertyTypes to allow undefined in optional properties ([7c37921](https://github.com/rb-mwindh/git-bundle/commit/7c37921d2b6982e226bd240cb27a70652f7859c2))
+
+
+### Features
+
+* **git-bundle:** prioritize contextRef checkout and auto-track branch/tag refs ([255b8e5](https://github.com/rb-mwindh/git-bundle/commit/255b8e5e698499f409c514f2cbc89e950e727b0c))
+* **github-api:** add getContextRef() to expose github.context.ref ([37dc27a](https://github.com/rb-mwindh/git-bundle/commit/37dc27a8c3b0d4e03ac27664603dd936cf1bbb05))
+
 # [2.1.0-rc.1](https://github.com/rb-mwindh/git-bundle/compare/v2.0.2...v2.1.0-rc.1) (2026-04-15)
 
 
