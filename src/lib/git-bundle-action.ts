@@ -73,6 +73,7 @@ export class GitBundleAction implements GitAction {
 
   async post(): Promise<void> {
     const {bundleName, trackedRefs, repoPath, tempDir} = this.readContext();
+
     const bundleApi = new GitBundleApi(repoPath, this.githubApi);
     await bundleApi.ensureGitRepository();
 
@@ -136,6 +137,11 @@ export class GitBundleAction implements GitAction {
       .map(ref => ref.trim())
       .filter(Boolean);
 
+    const contextRef = this.githubApi.getContextRef();
+    if (contextRef.startsWith('refs/heads/') || contextRef.startsWith('refs/tags/')) {
+      trackedRefs.push(contextRef);
+    }
+
     const repoPath = repoPathInput || process.env['GITHUB_WORKSPACE']?.trim() || process.cwd();
     const tempDir = tempDirInput || process.env['RUNNER_TEMP']?.trim() || os.tmpdir();
 
@@ -143,7 +149,7 @@ export class GitBundleAction implements GitAction {
       bundleName,
       repoPath,
       tempDir,
-      trackedRefs: trackedRefs.length > 0 ? trackedRefs : DEFAULT_TRACKED_REFS,
+      trackedRefs,
     };
   }
 }

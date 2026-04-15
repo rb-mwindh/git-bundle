@@ -65,6 +65,7 @@ export class GitBundleApi {
 
   async importBundle(bundlePath: string, bundleName: string): Promise<void> {
     const transportRef = this.getTransportRef(bundleName);
+    const contextRef = this.githubApi.getContextRef();
 
     const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});
     this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
@@ -89,25 +90,42 @@ export class GitBundleApi {
     this.githubApi.info(await this.gitApi.showRef());
     this.githubApi.info('Done.');
 
-    this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
-    const transportedHead = await this.gitApi.resolveRef(transportRef);
+    const checkoutCandidates = [
+      ...(contextRef ? [contextRef] : []),
+      transportRef,
+    ];
 
-    if (!transportedHead) {
-      throw new Error(
-        `Required ref "${transportRef}" could not be resolved after importing bundle "${bundlePath}". ` +
-        `Bundle contains refs: [${bundleRefs.join(', ')}]. ` +
-        `Ensure the bundle was created with the transport ref included in the revision specs.`
-      );
+    for (const candidate of checkoutCandidates) {
+      const resolved = await this.gitApi.resolveRef(candidate);
+      if (!resolved) {
+        continue;
+      }
+
+      this.githubApi.info(`Checkout ref "${candidate}" resolved to SHA ${resolved}. Checking out...`);
+
+      try {
+        if (candidate.startsWith('refs/heads/')) {
+          await this.gitApi.checkout(candidate.slice('refs/heads/'.length));
+        } else if (candidate.startsWith('refs/tags/')) {
+          await this.gitApi.checkout(candidate);
+        } else {
+          await this.gitApi.checkout(resolved);
+        }
+      } catch (err) {
+        throw new Error(
+          `Checkout candidate "${candidate}" could not be checked out after importing bundle "${bundlePath}".\n` +
+          `${String(err)}`
+        );
+      }
+
+      this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+      return;
     }
 
-    this.githubApi.info(`Transport ref "${transportRef}" resolved to SHA ${transportedHead}. Checking out...`);
-    try {
-      await this.gitApi.checkout(transportedHead);
-    } catch (error) {
-      throw new Error(`Transport ref "${transportRef}" could not be checked out after importing bundle "${bundlePath}". ${String(error)}`);
-    }
-
-    this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+    throw new Error(
+      `Neither context ref "${contextRef}" nor transport ref "${transportRef}" could be resolved after importing bundle "${bundlePath}". ` +
+      `Bundle contains refs: [${bundleRefs.join(', ')}].`
+    );
   }
 
   async createSnapshot(trackedRefs: string[]): Promise<RepoSnapshot> {
