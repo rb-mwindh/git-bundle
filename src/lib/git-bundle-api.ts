@@ -4,7 +4,6 @@ import {
   DEFAULT_TRACKED_REFS,
   type FetchRefsResult,
   GitApi,
-  type CreateBundleResult,
 } from './git-api.js';
 import {type FetchResult} from 'simple-git';
 import {RepoSnapshot} from "./types.js";
@@ -90,10 +89,7 @@ export class GitBundleApi {
     this.githubApi.info(await this.gitApi.showRef());
     this.githubApi.info('Done.');
 
-    const checkoutCandidates = [
-      ...(contextRef ? [contextRef] : []),
-      transportRef,
-    ];
+    const checkoutCandidates = [...new Set([contextRef, transportRef])].filter(Boolean);
 
     for (const candidate of checkoutCandidates) {
       const resolved = await this.gitApi.resolveRef(candidate);
@@ -118,7 +114,7 @@ export class GitBundleApi {
         );
       }
 
-      this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+      this.githubApi.info(`Checked out transport ref "${candidate}". Repository state is now based on the imported bundle.`);
       return;
     }
 

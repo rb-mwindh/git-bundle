@@ -1,8 +1,4 @@
-import artifact, {
-  type DownloadOptions,
-  type UploadOptions,
-  type UploadResponse,
-} from '@actions/artifact';
+import artifact, { type UploadOptions } from '@actions/artifact';
 import { context } from '@actions/github';
 import * as os from 'node:os';
 import {join} from 'node:path';
@@ -78,7 +74,7 @@ export class GithubApi {
   }
 
   getContextRef(): string {
-    return context.ref;
+    return context.ref || '';
   }
 
   /**
