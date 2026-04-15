@@ -4,8 +4,8 @@ import {GitApi} from './git-api.js';
 import {DEFAULT_TRACKED_REFS} from './git-api.js';
 import {createGithubApiHarness} from '../../test/github-api.harness.js';
 
-function createHarness() {
-  const {githubApi} = createGithubApiHarness();
+function createHarness(contextRef = 'refs/heads/main') {
+  const {githubApi} = createGithubApiHarness({contextRef});
 
   return {
     api: new GitBundleApi(process.cwd(), githubApi),
@@ -130,28 +130,73 @@ describe('GitBundleApi', () => {
       );
     });
 
-    it('fetches refs and checks out resolved transport ref', async () => {
-      const {api, githubApi} = createHarness();
+    it('checks out contextRef branch by short name when it resolves first', async () => {
+      const {api} = createHarness('refs/heads/feature-x');
       jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release', 'refs/tags/v1']);
       jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'fetch-ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
       jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
       const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
 
       await api.importBundle('/tmp/release', 'release');
 
-      expect(githubApi.info).toHaveBeenCalledWith(expect.stringContaining('refs/heads/release'));
-      expect(checkout).toHaveBeenCalledWith('abc123');
+      // contextRef is refs/heads/feature-x, so checkout should use the short branch name
+      expect(checkout).toHaveBeenCalledWith('feature-x');
     });
 
-    it('throws when transport ref cannot be resolved after import', async () => {
-      const {api} = createHarness();
+    it('checks out transport ref by short branch name when contextRef does not resolve', async () => {
+      const {api} = createHarness('refs/heads/main');
       jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
       jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
+      jest.spyOn(GitApi.prototype, 'resolveRef')
+        .mockResolvedValueOnce(null)       // contextRef (refs/heads/main) not resolved
+        .mockResolvedValueOnce('def456');  // transportRef (refs/heads/release) resolved
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(checkout).toHaveBeenCalledWith('release');
+    });
+
+    it('checks out tag ref by full ref name', async () => {
+      const {api} = createHarness('refs/tags/v1.2.3');
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/tags/v1.2.3']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('tagsha');
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(checkout).toHaveBeenCalledWith('refs/tags/v1.2.3');
+    });
+
+    it('checks out by SHA when candidate ref is not heads or tags', async () => {
+      const {api} = createHarness('refs/pull/42/head');
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
+      jest.spyOn(GitApi.prototype, 'resolveRef')
+        .mockResolvedValueOnce('prsha')   // contextRef resolved to SHA
+        .mockResolvedValueOnce('def456'); // transportRef (not reached)
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(checkout).toHaveBeenCalledWith('prsha');
+    });
+
+    it('throws when neither contextRef nor transportRef can be resolved after import', async () => {
+      const {api} = createHarness('refs/heads/main');
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
       jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue(null);
 
       await expect(api.importBundle('/tmp/release', 'release'))
         .rejects
-        .toThrow('Required ref "refs/heads/release" could not be resolved after importing bundle "/tmp/release".');
+        .toThrow('Neither context ref "refs/heads/main" nor transport ref "refs/heads/release" could be resolved');
     });
 
     it('wraps fetch errors with context', async () => {
@@ -165,15 +210,16 @@ describe('GitBundleApi', () => {
     });
 
     it('wraps checkout errors with context', async () => {
-      const {api} = createHarness();
+      const {api} = createHarness('refs/heads/main');
       jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
       jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
       jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
       jest.spyOn(GitApi.prototype, 'checkout').mockRejectedValue(new Error('checkout failed'));
 
       await expect(api.importBundle('/tmp/release', 'release'))
         .rejects
-        .toThrow('Transport ref "refs/heads/release" could not be checked out after importing bundle "/tmp/release".');
+        .toThrow('Checkout candidate "refs/heads/main" could not be checked out after importing bundle "/tmp/release".');
     });
   });
 });

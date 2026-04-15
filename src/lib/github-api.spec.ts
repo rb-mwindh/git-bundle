@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it, jest} from '@jest/globals';
 import artifact, {type ArtifactClient} from '@actions/artifact';
+import {context} from '@actions/github';
 import {GithubApi} from './github-api.js';
 
 describe('GithubApi', () => {
@@ -66,6 +67,13 @@ describe('GithubApi', () => {
     await expect(api.downloadArtifact(artifact, '/tmp')).rejects.toThrow(
       'Artifact download returned no path for "broken".'
     );
+  });
+
+  it('getContextRef returns the ref from GitHub Actions context', () => {
+    const {api} = createApi();
+    Object.defineProperty(context, 'ref', {value: 'refs/heads/feature-x', configurable: true});
+
+    expect(api.getContextRef()).toBe('refs/heads/feature-x');
   });
 });
 

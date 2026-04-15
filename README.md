@@ -17,6 +17,7 @@ Git bundles stored as workflow artifacts to move commits and selected refs betwe
 - **Commits** reachable from the transport ref `refs/heads/<bundle>`
 - **Tracked refs** matching the configured ref patterns (defaults: `refs/tags/*`, `refs/notes/*`)
 - **Current HEAD** through the transport ref `refs/heads/<bundle>`
+- **Context ref** (`github.context.ref`) automatically included when it is a branch or tag ref
 
 ## Usage
 
@@ -42,7 +43,7 @@ All inputs are optional.
 |-----------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `bundle`  | `release`                  | Bundle identifier. Used as the artifact name, the bundle file name, and the transport ref suffix in `refs/heads/<bundle>`.                                     |
 | `path`    | `${{ github.workspace }}`  | Path to the Git repository. At runtime the action falls back to the current working directory if the workspace value is unavailable.                           |
-| `refs`    | `refs/tags/*,refs/notes/*` | Comma-separated list of tracked ref patterns. These refs are fetched, snapshotted, and included in bundle generation.                                          |
+| `refs`    | `refs/tags/*,refs/notes/*` | Comma-separated list of tracked ref patterns. These refs are fetched, snapshotted, and included in bundle generation. `github.context.ref` is always appended automatically when it is a branch (`refs/heads/*`) or tag (`refs/tags/*`) ref. |
 | `tempDir` | `${{ runner.temp }}`       | Temporary directory used for artifact download, bundle creation, and artifact upload. At runtime the action falls back to the system temp directory if needed. |
 
 ## Compatibility
@@ -62,12 +63,13 @@ The action metadata uses the GitHub Actions `main` and `post` hooks.
 When the step runs, the action:
 
 1. Reads inputs and resolves runtime defaults.
-2. Verifies that the configured repository path is a Git repository.
-3. Fetches the tracked refs from `origin` and tries `--unshallow` first when the repository is shallow.
-4. Looks for an existing artifact with the configured bundle name.
-5. If an artifact exists, downloads it into `tempDir`, imports the bundle, and checks out the transported head.
-6. Creates a snapshot of the currently tracked refs.
-7. Saves that snapshot into GitHub Actions state for use in the `post` hook.
+2. Appends `github.context.ref` to the tracked refs list when it is a branch or tag ref.
+3. Verifies that the configured repository path is a Git repository.
+4. Fetches the tracked refs from `origin` and tries `--unshallow` first when the repository is shallow.
+5. Looks for an existing artifact with the configured bundle name.
+6. If an artifact exists, downloads it into `tempDir`, imports the bundle, and checks out the best available ref in priority order: `github.context.ref` first, then the transport ref `refs/heads/<bundle>`.
+7. Creates a snapshot of the currently tracked refs.
+8. Saves that snapshot into GitHub Actions state for use in the `post` hook.
 
 ### `post` hook
 
@@ -140,6 +142,11 @@ The current implementation handles these cases intentionally:
 - **No new bundle content**: The `post` hook skips artifact upload instead of failing.
 - **Missing tracked refs**: Snapshot creation tolerates missing namespaces such as absent tags or notes.
 - **Artifact replacement**: Before upload, the action attempts to delete an existing artifact with the same name.
+- **Bundle import checkout priority**: After importing a bundle, the action attempts to check out `github.context.ref`
+  first. If it cannot be resolved (e.g., it was not included in the bundle), the transport ref `refs/heads/<bundle>` is
+  used as a fallback. If neither resolves, the action fails with a descriptive error.
+- **Checkout by ref type**: Branch refs (`refs/heads/*`) are checked out by their short name, tag refs (`refs/tags/*`)
+  by their full ref name, and all other refs by their resolved SHA.
 
 ## State management
 

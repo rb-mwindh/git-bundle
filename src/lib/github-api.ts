@@ -77,6 +77,10 @@ export class GithubApi {
     return context.sha;
   }
 
+  getContextRef(): string {
+    return context.ref;
+  }
+
   /**
    * Emulates listArtifacts for backward compatibility.
    * @actions/artifact@^1 provides no public listing API, so this always returns empty.

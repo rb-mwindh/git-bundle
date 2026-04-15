@@ -6,6 +6,7 @@ export interface GithubApiHarnessOptions {
   inputs?: Record<string, string>;
   state?: string;
   contextSha?: string;
+  contextRef?: string;
 }
 
 export function createGithubApiMock(): jest.Mocked<GithubApi> {
@@ -20,6 +21,7 @@ export function createGithubApiMock(): jest.Mocked<GithubApi> {
     notice: jest.fn<GithubApi['notice']>(),
     warning: jest.fn<GithubApi['warning']>(),
     getContextSha: jest.fn<GithubApi['getContextSha']>(),
+    getContextRef: jest.fn<GithubApi['getContextRef']>(),
     listArtifacts: jest.fn<GithubApi['listArtifacts']>(),
     getArtifact: jest.fn<GithubApi['getArtifact']>(),
     downloadArtifact: jest.fn<GithubApi['downloadArtifact']>(),
@@ -41,6 +43,7 @@ export function createGithubApiHarness(options: GithubApiHarnessOptions = {}) {
   githubApi.getInput.mockImplementation((name: string) => inputs[name] ?? '');
   githubApi.getState.mockReturnValue(options.state ?? JSON.stringify({'refs/tags/v1.0.0': 'old-sha'}));
   githubApi.getContextSha.mockReturnValue(options.contextSha ?? 'context-sha');
+  githubApi.getContextRef.mockReturnValue(options.contextRef ?? 'refs/heads/main');
   githubApi.getArtifact.mockResolvedValue(null);
   githubApi.downloadArtifact.mockResolvedValue('C:\\temp\\release');
   githubApi.deleteArtifact.mockResolvedValue(undefined as never);
