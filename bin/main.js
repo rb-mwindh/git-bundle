@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v2.0.2-rc.1 | MIT */
+/*! @rb-mwindh/git-bundle v2.0.2 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
@@ -83,6 +83,9 @@ var GithubApi = class {
   getContextSha() {
     return context.sha;
   }
+  getContextRef() {
+    return context.ref;
+  }
   /**
    * Emulates listArtifacts for backward compatibility.
    * @actions/artifact@^1 provides no public listing API, so this always returns empty.
@@ -158,6 +161,9 @@ var GithubApi = class {
     return msg.includes("Unable to find any artifacts") || msg.includes(`Unable to find an artifact with the name: ${name}`);
   }
 };
+
+// src/lib/git-bundle-api.ts
+import fs from "node:fs";
 
 // src/lib/git-api.ts
 import { simpleGit } from "simple-git";
@@ -312,7 +318,6 @@ var GitApi = class {
 };
 
 // src/lib/git-bundle-api.ts
-import fs from "node:fs";
 var GitBundleApi = class {
   githubApi;
   gitApi;
@@ -358,6 +363,7 @@ var GitBundleApi = class {
   }
   async importBundle(bundlePath, bundleName) {
     const transportRef = this.getTransportRef(bundleName);
+    const contextRef = this.githubApi.getContextRef();
     const stats = fs.statSync(bundlePath, { throwIfNoEntry: false });
     this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`);
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
@@ -378,20 +384,36 @@ ${this.formatFetchResult(fetchResult)}`);
     this.githubApi.info("Printing all refs for debugging purposes...");
     this.githubApi.info(await this.gitApi.showRef());
     this.githubApi.info("Done.");
-    this.githubApi.info(`Resolving transport ref "${transportRef}"...`);
-    const transportedHead = await this.gitApi.resolveRef(transportRef);
-    if (!transportedHead) {
-      throw new Error(
-        `Required ref "${transportRef}" could not be resolved after importing bundle "${bundlePath}". Bundle contains refs: [${bundleRefs.join(", ")}]. Ensure the bundle was created with the transport ref included in the revision specs.`
-      );
+    const checkoutCandidates = [
+      ...contextRef ? [contextRef] : [],
+      transportRef
+    ];
+    for (const candidate of checkoutCandidates) {
+      const resolved = await this.gitApi.resolveRef(candidate);
+      if (!resolved) {
+        continue;
+      }
+      this.githubApi.info(`Checkout ref "${candidate}" resolved to SHA ${resolved}. Checking out...`);
+      try {
+        if (candidate.startsWith("refs/heads/")) {
+          await this.gitApi.checkout(candidate.slice("refs/heads/".length));
+        } else if (candidate.startsWith("refs/tags/")) {
+          await this.gitApi.checkout(candidate);
+        } else {
+          await this.gitApi.checkout(resolved);
+        }
+      } catch (err) {
+        throw new Error(
+          `Checkout candidate "${candidate}" could not be checked out after importing bundle "${bundlePath}".
+${String(err)}`
+        );
+      }
+      this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+      return;
     }
-    this.githubApi.info(`Transport ref "${transportRef}" resolved to SHA ${transportedHead}. Checking out...`);
-    try {
-      await this.gitApi.checkout(transportedHead);
-    } catch (error) {
-      throw new Error(`Transport ref "${transportRef}" could not be checked out after importing bundle "${bundlePath}". ${String(error)}`);
-    }
-    this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+    throw new Error(
+      `Neither context ref "${contextRef}" nor transport ref "${transportRef}" could be resolved after importing bundle "${bundlePath}". Bundle contains refs: [${bundleRefs.join(", ")}].`
+    );
   }
   async createSnapshot(trackedRefs) {
     return this.gitApi.createSnapshot(trackedRefs);
@@ -571,13 +593,17 @@ var GitBundleAction = class {
     const tempDirInput = this.githubApi.getInput("tempDir", { required: false });
     const trackedRefsInput = this.githubApi.getInput("refs", { required: false });
     const trackedRefs = trackedRefsInput.split(",").map((ref) => ref.trim()).filter(Boolean);
+    const contextRef = this.githubApi.getContextRef();
+    if (contextRef.startsWith("refs/heads/") || contextRef.startsWith("refs/tags/")) {
+      trackedRefs.push(contextRef);
+    }
     const repoPath = repoPathInput || process.env["GITHUB_WORKSPACE"]?.trim() || process.cwd();
     const tempDir = tempDirInput || process.env["RUNNER_TEMP"]?.trim() || os2.tmpdir();
     return {
       bundleName,
       repoPath,
       tempDir,
-      trackedRefs: trackedRefs.length > 0 ? trackedRefs : DEFAULT_TRACKED_REFS
+      trackedRefs
     };
   }
 };
