@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v2.1.0-rc.1 | MIT */
+/*! @rb-mwindh/git-bundle v2.1.0 | MIT */
 
 // src/post.ts
 import * as core from "@actions/core";
@@ -84,7 +84,7 @@ var GithubApi = class {
     return context.sha;
   }
   getContextRef() {
-    return context.ref;
+    return context.ref || "";
   }
   /**
    * Emulates listArtifacts for backward compatibility.
@@ -384,10 +384,7 @@ ${this.formatFetchResult(fetchResult)}`);
     this.githubApi.info("Printing all refs for debugging purposes...");
     this.githubApi.info(await this.gitApi.showRef());
     this.githubApi.info("Done.");
-    const checkoutCandidates = [
-      ...contextRef ? [contextRef] : [],
-      transportRef
-    ];
+    const checkoutCandidates = [.../* @__PURE__ */ new Set([contextRef, transportRef])].filter(Boolean);
     for (const candidate of checkoutCandidates) {
       const resolved = await this.gitApi.resolveRef(candidate);
       if (!resolved) {
@@ -408,7 +405,7 @@ ${this.formatFetchResult(fetchResult)}`);
 ${String(err)}`
         );
       }
-      this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
+      this.githubApi.info(`Checked out transport ref "${candidate}". Repository state is now based on the imported bundle.`);
       return;
     }
     throw new Error(
@@ -548,9 +545,14 @@ var GitBundleAction = class {
     const bundleApi = new GitBundleApi(repoPath, this.githubApi);
     await bundleApi.ensureGitRepository();
     const githubSha = this.githubApi.getContextSha();
+    const contextRef = this.githubApi.getContextRef();
+    const effectiveTrackedRefs = [...trackedRefs];
+    if (contextRef.startsWith("refs/heads/") || contextRef.startsWith("refs/tags/")) {
+      effectiveTrackedRefs.push(contextRef);
+    }
     const previousSnapshot = bundleApi.readSavedSnapshot();
     this.githubApi.info(`previousSnapshot: ${JSON.stringify(previousSnapshot)}`);
-    const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
+    const currentSnapshot = await bundleApi.createSnapshot(effectiveTrackedRefs);
     this.githubApi.info(`currentSnapshot: ${JSON.stringify(currentSnapshot)}`);
     const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
     this.githubApi.info(`changedRefs: ${JSON.stringify(changedRefs)}`);
@@ -593,10 +595,6 @@ var GitBundleAction = class {
     const tempDirInput = this.githubApi.getInput("tempDir", { required: false });
     const trackedRefsInput = this.githubApi.getInput("refs", { required: false });
     const trackedRefs = trackedRefsInput.split(",").map((ref) => ref.trim()).filter(Boolean);
-    const contextRef = this.githubApi.getContextRef();
-    if (contextRef.startsWith("refs/heads/") || contextRef.startsWith("refs/tags/")) {
-      trackedRefs.push(contextRef);
-    }
     const repoPath = repoPathInput || process.env["GITHUB_WORKSPACE"]?.trim() || process.cwd();
     const tempDir = tempDirInput || process.env["RUNNER_TEMP"]?.trim() || os2.tmpdir();
     return {
