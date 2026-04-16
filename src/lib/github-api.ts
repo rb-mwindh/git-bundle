@@ -1,14 +1,10 @@
-import artifact, {
-  type DownloadOptions,
-  type UploadOptions,
-  type UploadResponse,
-} from '@actions/artifact';
+import artifact, { type UploadOptions } from '@actions/artifact';
 import { context } from '@actions/github';
 import * as os from 'node:os';
 import {join} from 'node:path';
 import {
   type AnnotationProperties,
-  debug,
+  debug, error,
   getInput,
   getState,
   info,
@@ -65,12 +61,16 @@ export class GithubApi {
     info(message);
   }
 
-  notice(message: string | Error, properties?: AnnotationProperties): void {
-    notice(message, properties);
+  notice(message: string | Error): void {
+    notice(message);
   }
 
-  warning(message: string | Error, properties?: AnnotationProperties): void {
-    warning(message, properties);
+  warning(message: string | Error): void {
+    warning(message);
+  }
+
+  error(message: string | Error): void {
+    error(message);
   }
 
   getContextSha(): string {
@@ -78,7 +78,7 @@ export class GithubApi {
   }
 
   getContextRef(): string {
-    return context.ref;
+    return context.ref || '';
   }
 
   /**

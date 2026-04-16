@@ -37,24 +37,12 @@ describe('GitBundleAction.main', () => {
 
     await action.main();
 
-    expect(fetchTrackedRefs).toHaveBeenCalledWith(['refs/tags/*', 'refs/notes/*', 'refs/heads/main']);
+    expect(fetchTrackedRefs).toHaveBeenCalledWith(['refs/tags/*', 'refs/notes/*']);
     expect(githubApi.getArtifact).toHaveBeenCalledWith('release');
     expect(githubApi.notice).toHaveBeenCalledWith(
       'No previous artifact named "release" found. This is expected in the first job.'
     );
     expect(saveSnapshot).toHaveBeenCalledWith({'refs/tags/v1.0.0': 'new-sha'});
-  });
-
-  it('includes contextRef tag in trackedRefs when it starts with refs/tags/', async () => {
-    const {githubApi, inputs} = createGithubApiHarness({contextRef: 'refs/tags/v1.2.3'});
-    const apiHarness = createGitBundleApiHarness();
-    const action = new GitBundleAction(githubApi);
-
-    await action.main();
-
-    expect(apiHarness.fetchTrackedRefs).toHaveBeenCalledWith(
-      expect.arrayContaining(['refs/tags/v1.2.3'])
-    );
   });
 
   it('does not add contextRef to trackedRefs when it is not a branch or tag', async () => {
@@ -100,7 +88,7 @@ describe('GitBundleAction.post', () => {
 
     await action.post();
 
-    expect(updateRef).toHaveBeenCalledWith('refs/heads/release', 'head-sha');
+    expect(updateRef).toHaveBeenCalledWith('refs/git-bundle/transport', 'head-sha');
     expect(githubApi.notice).toHaveBeenCalledWith(
       'No new bundle content for "release". Artifact upload is skipped by design.'
     );

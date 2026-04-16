@@ -3,7 +3,6 @@ import * as path from 'node:path';
 import {formatDate} from './format-date.js';
 import {formatFileSize} from './format-file-size.js';
 import {GithubApi} from './github-api.js';
-import {DEFAULT_TRACKED_REFS} from './git-api.js';
 import {GitBundleApi} from './git-bundle-api.js';
 import {GitAction} from "./types.js";
 
@@ -78,17 +77,23 @@ export class GitBundleAction implements GitAction {
     await bundleApi.ensureGitRepository();
 
     const githubSha = this.githubApi.getContextSha();
+    const contextRef = this.githubApi.getContextRef();
+    const effectiveTrackedRefs = [...trackedRefs];
+    if (contextRef.startsWith('refs/heads/') || contextRef.startsWith('refs/tags/')) {
+      effectiveTrackedRefs.push(contextRef);
+    }
+
     const previousSnapshot = bundleApi.readSavedSnapshot();
     this.githubApi.info(`previousSnapshot: ${JSON.stringify(previousSnapshot)}`);
 
-    const currentSnapshot = await bundleApi.createSnapshot(trackedRefs);
+    const currentSnapshot = await bundleApi.createSnapshot(effectiveTrackedRefs);
     this.githubApi.info(`currentSnapshot: ${JSON.stringify(currentSnapshot)}`);
 
     const changedRefs = bundleApi.diffSnapshots(previousSnapshot, currentSnapshot);
     this.githubApi.info(`changedRefs: ${JSON.stringify(changedRefs)}`);
 
     const headSha = await bundleApi.getHeadSha();
-    const transportRef = bundleApi.getTransportRef(bundleName);
+    const transportRef = bundleApi.getTransportRef();
     await bundleApi.updateRef(transportRef, headSha);
 
     const revisionSpecs = await bundleApi.buildRevisionSpecs(githubSha, transportRef, changedRefs);
@@ -136,11 +141,6 @@ export class GitBundleAction implements GitAction {
       .split(',')
       .map(ref => ref.trim())
       .filter(Boolean);
-
-    const contextRef = this.githubApi.getContextRef();
-    if (contextRef.startsWith('refs/heads/') || contextRef.startsWith('refs/tags/')) {
-      trackedRefs.push(contextRef);
-    }
 
     const repoPath = repoPathInput || process.env['GITHUB_WORKSPACE']?.trim() || process.cwd();
     const tempDir = tempDirInput || process.env['RUNNER_TEMP']?.trim() || os.tmpdir();

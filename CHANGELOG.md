@@ -1,3 +1,25 @@
+# [2.2.0-rc.3](https://github.com/rb-mwindh/git-bundle/compare/v2.2.0-rc.2...v2.2.0-rc.3) (2026-04-16)
+
+
+### Features
+
+* **api:** delete `transportRef` after import ([3b40d2b](https://github.com/rb-mwindh/git-bundle/commit/3b40d2bf98e617784cb532e8dbca4ae6dd8357da))
+
+# [2.2.0-rc.2](https://github.com/rb-mwindh/git-bundle/compare/v2.2.0-rc.1...v2.2.0-rc.2) (2026-04-16)
+
+
+### Features
+
+* **git-api:** add logger-based outputHandler integration ([9b4eb11](https://github.com/rb-mwindh/git-bundle/commit/9b4eb11e4372f5af7ad1f454e8235369df563757))
+* **git-bundle-api:** detach HEAD when importing tracked head refs ([a5c32e9](https://github.com/rb-mwindh/git-bundle/commit/a5c32e94d24690a8b23f405b9aeaa37fd54a3f7e))
+
+# [2.2.0-rc.1](https://github.com/rb-mwindh/git-bundle/compare/v2.1.0...v2.2.0-rc.1) (2026-04-15)
+
+
+### Features
+
+* **git-bundle:** enhance trackedRefs to include contextRef when applicable ([54c2469](https://github.com/rb-mwindh/git-bundle/commit/54c2469ab59d8917d1fbd502c533aaab3ca12b1e))
+
 # [2.1.0](https://github.com/rb-mwindh/git-bundle/compare/v2.0.2...v2.1.0) (2026-04-15)
 
 

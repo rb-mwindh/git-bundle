@@ -1,11 +1,6 @@
 import fs from 'node:fs';
 import {GithubApi} from './github-api.js';
-import {
-  DEFAULT_TRACKED_REFS,
-  type FetchRefsResult,
-  GitApi,
-  type CreateBundleResult,
-} from './git-api.js';
+import {DEFAULT_TRACKED_REFS, type FetchRefsResult, GitApi,} from './git-api.js';
 import {type FetchResult} from 'simple-git';
 import {RepoSnapshot} from "./types.js";
 
@@ -15,7 +10,7 @@ export class GitBundleApi {
 
   constructor(repoPath: string, githubApi: GithubApi) {
     this.githubApi = githubApi;
-    this.gitApi = new GitApi(repoPath);
+    this.gitApi = new GitApi(repoPath, githubApi);
   }
 
   async ensureGitRepository(): Promise<void> {
@@ -59,18 +54,56 @@ export class GitBundleApi {
     return `(remote=${result.remote || 'unknown'}, updated=${updatedCount}, deleted=${deletedCount}).`;
   }
 
-  getTransportRef(bundleName: string): string {
-    return `refs/heads/${bundleName}`;
+  getTransportRef(): string {
+    return 'refs/git-bundle/transport';
+  }
+
+  private async tryRestoreRef(ref: string): Promise<boolean> {
+    if (!ref) {
+      return false;
+    }
+
+    const resolvedSha = await this.gitApi.resolveRef(ref);
+    if (!resolvedSha) {
+      this.githubApi.debug(`Ref "${ref}" could not be resolved.`);
+      return false;
+    }
+
+    this.githubApi.info(`Restoring ref "${ref}" at ${resolvedSha}...`);
+
+    if (ref.startsWith('refs/heads/')) {
+      await this.gitApi.checkout(ref.slice('refs/heads/'.length));
+      this.githubApi.info(`Checked out branch "${ref}".`);
+    } else if (ref.startsWith('refs/tags/')) {
+      await this.gitApi.checkout(ref);
+      this.githubApi.info(`Checked out tag "${ref}".`);
+    } else {
+      await this.gitApi.checkout(resolvedSha, {detach: true});
+      this.githubApi.info(`Checked out detached SHA "${resolvedSha}" from "${ref}".`);
+    }
+
+    return true;
   }
 
   async importBundle(bundlePath: string, bundleName: string): Promise<void> {
-    const transportRef = this.getTransportRef(bundleName);
+    const transportRef = this.getTransportRef();
     const contextRef = this.githubApi.getContextRef();
 
     const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});
     this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
 
+    const currentHeadRef = await this.gitApi.getHeadRef();
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
+    const shouldDetach = currentHeadRef !== null && bundleRefs.includes(currentHeadRef);
+
+    if (shouldDetach) {
+      this.githubApi.info(
+        `Current HEAD is attached to "${currentHeadRef}", ` +
+        `which will be updated by bundle import. ` +
+        `Detaching HEAD temporarily...`
+      );
+      await this.gitApi.checkout('HEAD', {detach: true});
+    }
 
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
@@ -86,46 +119,23 @@ export class GitBundleApi {
       throw new Error(`Failed to import Git bundle "${bundlePath}": ${String(err)}`);
     }
 
-    this.githubApi.info('Printing all refs for debugging purposes...');
-    this.githubApi.info(await this.gitApi.showRef());
-    this.githubApi.info('Done.');
-
-    const checkoutCandidates = [
-      ...(contextRef ? [contextRef] : []),
-      transportRef,
-    ];
-
-    for (const candidate of checkoutCandidates) {
-      const resolved = await this.gitApi.resolveRef(candidate);
-      if (!resolved) {
-        continue;
-      }
-
-      this.githubApi.info(`Checkout ref "${candidate}" resolved to SHA ${resolved}. Checking out...`);
-
-      try {
-        if (candidate.startsWith('refs/heads/')) {
-          await this.gitApi.checkout(candidate.slice('refs/heads/'.length));
-        } else if (candidate.startsWith('refs/tags/')) {
-          await this.gitApi.checkout(candidate);
-        } else {
-          await this.gitApi.checkout(resolved);
-        }
-      } catch (err) {
+    if (!await this.tryRestoreRef(contextRef)) {
+      if (!await this.tryRestoreRef(transportRef)) {
         throw new Error(
-          `Checkout candidate "${candidate}" could not be checked out after importing bundle "${bundlePath}".\n` +
-          `${String(err)}`
+          `Neither context ref "${contextRef}" nor transport ref "${transportRef}" could be restored after importing bundle "${bundlePath}". ` +
+          `Bundle contains refs: [${bundleRefs.join(', ')}].`
         );
       }
-
-      this.githubApi.info(`Checked out transport ref "${transportRef}". Repository state is now based on the imported bundle.`);
-      return;
     }
 
-    throw new Error(
-      `Neither context ref "${contextRef}" nor transport ref "${transportRef}" could be resolved after importing bundle "${bundlePath}". ` +
-      `Bundle contains refs: [${bundleRefs.join(', ')}].`
-    );
+    try {
+      await this.gitApi.deleteRef(transportRef);
+      this.githubApi.info(`Removed transport ref "${transportRef}" after import.`);
+    } catch (err) {
+      this.githubApi.warning(`Failed to remove transport ref "${transportRef}" after import: ${String(err)}`);
+    }
+
+    this.githubApi.info('Repository state is now based on the imported bundle.');
   }
 
   async createSnapshot(trackedRefs: string[]): Promise<RepoSnapshot> {
@@ -198,7 +208,7 @@ export class GitBundleApi {
       const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
       this.githubApi.debug(JSON.stringify(result));
 
-      const stat = fs.statSync(bundlePath, { throwIfNoEntry: false }) || ({ size: 0 });
+      const stat = fs.statSync(bundlePath, {throwIfNoEntry: false}) || ({size: 0});
       this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
 
       return stat.size > 0;
