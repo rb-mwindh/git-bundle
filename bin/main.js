@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v2.2.0-rc.2 | MIT */
+/*! @rb-mwindh/git-bundle v2.2.0-rc.3 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
