@@ -2,8 +2,9 @@
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {PassThrough} from 'node:stream';
 import {type FetchResult } from 'simple-git';
-import {DEFAULT_TRACKED_REFS, GitApi, GitClient} from './git-api.js';
+import {DEFAULT_TRACKED_REFS, GitApi, type GitClient, type Logger} from './git-api.js';
 
 function createGitMock() {
   return {
@@ -12,12 +13,13 @@ function createGitMock() {
     fetch: jest.fn(),
     raw: jest.fn(),
     checkout: jest.fn(),
+    outputHandler: jest.fn(),
   } as unknown as jest.Mocked<GitClient>;
 }
 
-function createHarness() {
+function createHarness(logger?: Logger) {
   const git = createGitMock();
-  const api = new GitApi(git);
+  const api = new GitApi(git, logger);
   return {git, api};
 }
 
@@ -26,7 +28,38 @@ describe('GitApi', () => {
   let api: GitApi;
 
   beforeEach(() => {
-    ({git, api} = createHarness());
+    ({git, api} = createHarness({debug: () => undefined}));
+  });
+
+  describe('constructor', () => {
+    it('registers outputHandler when logger is provided and forwards command/stdout/stderr to debug', () => {
+      const debug = jest.fn<Logger['debug']>();
+      const localGit = createGitMock();
+
+      new GitApi(localGit, {debug});
+
+      expect(localGit.outputHandler).toHaveBeenCalledTimes(1);
+      const handler = localGit.outputHandler.mock.calls[0]?.[0];
+      expect(handler).toBeDefined();
+
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      handler?.('git fetch --force origin', stdout, stderr, []);
+      stdout.write('stdout line');
+      stderr.write('stderr line');
+
+      expect(debug).toHaveBeenNthCalledWith(1, 'git fetch --force origin');
+      expect(debug).toHaveBeenCalledWith('stdout line');
+      expect(debug).toHaveBeenCalledWith('stderr line');
+    });
+
+    it('does not register outputHandler when logger is omitted', () => {
+      const localGit = createGitMock();
+
+      new GitApi(localGit);
+
+      expect(localGit.outputHandler).not.toHaveBeenCalled();
+    });
   });
 
   describe('checkIsRepo', () => {
@@ -167,10 +200,42 @@ describe('GitApi', () => {
   });
 
   describe('checkout', () => {
-    it('checks out the given sha with --force', async () => {
+    it('checks out the given sha with --force by default', async () => {
       git.checkout.mockResolvedValue(undefined as never);
 
       await api.checkout('abc123');
+      expect(git.checkout).toHaveBeenCalledWith(['--force', 'abc123']);
+    });
+
+    it('omits --force when force=false', async () => {
+      git.checkout.mockResolvedValue(undefined as never);
+
+      await api.checkout('abc123', {force: false});
+
+      expect(git.checkout).toHaveBeenCalledWith(['abc123']);
+    });
+
+    it('adds --detach when detach=true', async () => {
+      git.checkout.mockResolvedValue(undefined as never);
+
+      await api.checkout('abc123', {detach: true});
+
+      expect(git.checkout).toHaveBeenCalledWith(['--force', '--detach', 'abc123']);
+    });
+
+    it('adds only --detach when force=false and detach=true', async () => {
+      git.checkout.mockResolvedValue(undefined as never);
+
+      await api.checkout('abc123', {force: false, detach: true});
+
+      expect(git.checkout).toHaveBeenCalledWith(['--detach', 'abc123']);
+    });
+
+    it('does not add --detach when detach=false', async () => {
+      git.checkout.mockResolvedValue(undefined as never);
+
+      await api.checkout('abc123', {detach: false});
+
       expect(git.checkout).toHaveBeenCalledWith(['--force', 'abc123']);
     });
   });

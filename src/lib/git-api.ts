@@ -1,5 +1,4 @@
 import {type FetchResult, type SimpleGit, simpleGit} from 'simple-git';
-import * as fs from 'node:fs/promises';
 import {RepoSnapshot} from "./types.js";
 import {FetchRefSpec, toFetchRefSpec} from "./fetch-ref-specs.js";
 
@@ -7,21 +6,8 @@ export const DEFAULT_TRACKED_REFS = ['refs/tags/*', 'refs/notes/*'];
 
 export interface FetchRefsResult {
   wasShallow: boolean;
-  // unshallowFailed: boolean;
   unshallowError?: string;
   fetchResult: FetchResult;
-}
-
-export interface ImportBundleResult {
-  bundleRefs: string[];
-  skipped: boolean;
-  fetchRaw?: string;
-  transportedHead?: string;
-}
-
-export interface CreateBundleResult {
-  created: boolean;
-  bundlePath: string;
 }
 
 export type GitClient = Pick<SimpleGit,
@@ -30,7 +16,12 @@ export type GitClient = Pick<SimpleGit,
   | 'fetch'
   | 'raw'
   | 'checkout'
+  | 'outputHandler'
 >;
+
+export type Logger = {
+  debug(message: string): void;
+}
 
 /**
  * Encapsulates all Git API operations with internal SimpleGit instance management.
@@ -39,10 +30,18 @@ export type GitClient = Pick<SimpleGit,
 export class GitApi {
   private readonly git: GitClient;
 
-  constructor(repoPathOrClient: string | GitClient) {
+  constructor(repoPathOrClient: string | GitClient, logger?: Logger) {
     this.git = typeof repoPathOrClient === 'string'
       ? simpleGit(repoPathOrClient)
       : repoPathOrClient;
+
+    if (logger) {
+      this.git.outputHandler((command, stdout, stderr) => {
+        logger.debug(command);
+        stdout.on('data', data => logger.debug(String(data)));
+        stderr.on('data', data => logger.debug(String(data)));
+      });
+    }
   }
 
   /**
@@ -84,8 +83,17 @@ export class GitApi {
   }
 
 
-  async checkout(sha: string) {
-    return this.git.checkout(['--force', sha]);
+  async checkout(sha: string, options?: { force?: boolean, detach?: boolean }): Promise<void> {
+    const args = [];
+    if (options?.force !== false) {
+      args.push('--force');
+    }
+    if (options?.detach === true) {
+      args.push('--detach');
+    }
+    args.push(sha);
+
+    await this.git.checkout(args);
   }
 
   /**
@@ -123,6 +131,14 @@ export class GitApi {
    */
   async getHeadSha(): Promise<string> {
     return (await this.git.revparse(['HEAD'])).trim();
+  }
+
+  async getHeadRef(): Promise<string | null> {
+    try {
+      return (await this.git.raw(['symbolic-ref', '--quiet', 'HEAD'])).trim();
+    } catch {
+      return null;
+    }
   }
 
   /**
