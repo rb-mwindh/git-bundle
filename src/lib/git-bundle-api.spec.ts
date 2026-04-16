@@ -106,7 +106,7 @@ describe('GitBundleApi', () => {
   it('buildRevisionSpecs returns empty list when no commits and no changed refs exist', async() => {
     const {api} = createHarness();
 
-    const specs = await api.buildRevisionSpecs('base', 'refs/heads/release', []);
+    const specs = await api.buildRevisionSpecs('base', 'refs/git-bundle/transport', []);
 
     expect(specs).toEqual([]);
   });
@@ -114,7 +114,7 @@ describe('GitBundleApi', () => {
   it('getTransportRef and diffSnapshots provide bundle-level helper behavior', () => {
     const {api} = createHarness();
 
-    expect(api.getTransportRef('release')).toBe('refs/heads/release');
+    expect(api.getTransportRef()).toBe('refs/git-bundle/transport');
     expect(api.diffSnapshots({'refs/tags/v1': 'a'}, {'refs/tags/v1': 'b'})).toEqual(['refs/tags/v1']);
   });
 
@@ -174,19 +174,19 @@ describe('GitBundleApi', () => {
       expect(checkout).toHaveBeenCalledWith('feature-x');
     });
 
-    it('checks out transport ref by short branch name when contextRef does not resolve', async () => {
+    it('checks out transport ref by resolved SHA when contextRef does not resolve', async () => {
       const {api} = createHarness('refs/heads/main');
       jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release']);
       jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
       jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
       jest.spyOn(GitApi.prototype, 'resolveRef')
         .mockResolvedValueOnce(null)       // contextRef (refs/heads/main) not resolved
-        .mockResolvedValueOnce('def456');  // transportRef (refs/heads/release) resolved
+        .mockResolvedValueOnce('def456');  // transportRef (refs/git-bundle/transport) resolved
       const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
 
       await api.importBundle('/tmp/release', 'release');
 
-      expect(checkout).toHaveBeenCalledWith('release');
+      expect(checkout).toHaveBeenCalledWith('def456');
     });
 
     it('checks out tag ref by full ref name', async () => {
@@ -226,7 +226,7 @@ describe('GitBundleApi', () => {
 
       await expect(api.importBundle('/tmp/release', 'release'))
         .rejects
-        .toThrow('Neither context ref "refs/heads/main" nor transport ref "refs/heads/release" could be resolved');
+        .toThrow('Neither context ref "refs/heads/main" nor transport ref "refs/git-bundle/transport" could be resolved');
     });
 
     it('wraps fetch errors with context', async () => {

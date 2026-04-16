@@ -88,7 +88,7 @@ describe('GitBundleAction.post', () => {
 
     await action.post();
 
-    expect(updateRef).toHaveBeenCalledWith('refs/heads/release', 'head-sha');
+    expect(updateRef).toHaveBeenCalledWith('refs/git-bundle/transport', 'head-sha');
     expect(githubApi.notice).toHaveBeenCalledWith(
       'No new bundle content for "release". Artifact upload is skipped by design.'
     );

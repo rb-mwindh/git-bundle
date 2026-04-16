@@ -54,12 +54,12 @@ export class GitBundleApi {
     return `(remote=${result.remote || 'unknown'}, updated=${updatedCount}, deleted=${deletedCount}).`;
   }
 
-  getTransportRef(bundleName: string): string {
-    return `refs/heads/${bundleName}`;
+  getTransportRef(): string {
+    return 'refs/git-bundle/transport';
   }
 
   async importBundle(bundlePath: string, bundleName: string): Promise<void> {
-    const transportRef = this.getTransportRef(bundleName);
+    const transportRef = this.getTransportRef();
     const contextRef = this.githubApi.getContextRef();
 
     const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});

@@ -93,7 +93,7 @@ export class GitBundleAction implements GitAction {
     this.githubApi.info(`changedRefs: ${JSON.stringify(changedRefs)}`);
 
     const headSha = await bundleApi.getHeadSha();
-    const transportRef = bundleApi.getTransportRef(bundleName);
+    const transportRef = bundleApi.getTransportRef();
     await bundleApi.updateRef(transportRef, headSha);
 
     const revisionSpecs = await bundleApi.buildRevisionSpecs(githubSha, transportRef, changedRefs);

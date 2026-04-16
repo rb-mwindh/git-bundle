@@ -14,9 +14,9 @@ Git bundles stored as workflow artifacts to move commits and selected refs betwe
 
 ## What gets transported
 
-- **Commits** reachable from the transport ref `refs/heads/<bundle>`
+- **Commits** reachable from the action-managed transport state
 - **Tracked refs** matching the configured ref patterns (defaults: `refs/tags/*`, `refs/notes/*`)
-- **Current HEAD** through the transport ref `refs/heads/<bundle>`
+- **Current HEAD** through an action-managed internal transport state
 - **Context ref** (`github.context.ref`) automatically included when it is a branch or tag ref
 
 ## Usage
@@ -41,7 +41,7 @@ All inputs are optional.
 
 | Name      | Default                    | Description                                                                                                                                                    |
 |-----------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bundle`  | `release`                  | Bundle identifier. Used as the artifact name, the bundle file name, and the transport ref suffix in `refs/heads/<bundle>`.                                     |
+| `bundle`  | `release`                  | Bundle identifier. Used as the artifact name and bundle file name.                                                                           |
 | `path`    | `${{ github.workspace }}`  | Path to the Git repository. At runtime the action falls back to the current working directory if the workspace value is unavailable.                           |
 | `refs`    | `refs/tags/*,refs/notes/*` | Comma-separated list of tracked ref patterns. These refs are fetched, snapshotted, and included in bundle generation. `github.context.ref` is always appended automatically when it is a branch (`refs/heads/*`) or tag (`refs/tags/*`) ref. |
 | `tempDir` | `${{ runner.temp }}`       | Temporary directory used for artifact download, bundle creation, and artifact upload. At runtime the action falls back to the system temp directory if needed. |
@@ -67,7 +67,7 @@ When the step runs, the action:
 3. Verifies that the configured repository path is a Git repository.
 4. Fetches the tracked refs from `origin` and tries `--unshallow` first when the repository is shallow.
 5. Looks for an existing artifact with the configured bundle name.
-6. If an artifact exists, downloads it into `tempDir`, imports the bundle, and checks out the best available ref in priority order: `github.context.ref` first, then the transport ref `refs/heads/<bundle>`.
+6. If an artifact exists, downloads it into `tempDir`, imports the bundle, and checks out the best available ref in priority order: `github.context.ref` first, then an internal fallback ref managed by the action.
 7. Creates a snapshot of the currently tracked refs.
 8. Saves that snapshot into GitHub Actions state for use in the `post` hook.
 
@@ -79,10 +79,10 @@ At job teardown, the action:
 2. Verifies that the repository still exists.
 3. Loads the saved tracked-ref snapshot.
 4. Creates a fresh snapshot and determines which tracked refs changed.
-5. Updates `refs/heads/<bundle>` to the current `HEAD`.
+5. Updates an internal transport reference to the current `HEAD`.
 6. Computes bundle revision specs from:
 
-- the commit range `github.context.sha..refs/heads/<bundle>` when new commits exist,
+- the commit range between `github.context.sha` and the action-managed transport state when new commits exist,
 - the transport ref itself, and
 - tracked refs whose current SHA changed.
 
@@ -143,7 +143,7 @@ The current implementation handles these cases intentionally:
 - **Missing tracked refs**: Snapshot creation tolerates missing namespaces such as absent tags or notes.
 - **Artifact replacement**: Before upload, the action attempts to delete an existing artifact with the same name.
 - **Bundle import checkout priority**: After importing a bundle, the action attempts to check out `github.context.ref`
-  first. If it cannot be resolved (e.g., it was not included in the bundle), the transport ref `refs/heads/<bundle>` is
+  first. If it cannot be resolved (e.g., it was not included in the bundle), an internal fallback ref is
   used as a fallback. If neither resolves, the action fails with a descriptive error.
 - **Checkout by ref type**: Branch refs (`refs/heads/*`) are checked out by their short name, tag refs (`refs/tags/*`)
   by their full ref name, and all other refs by their resolved SHA.
