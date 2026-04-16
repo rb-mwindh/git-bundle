@@ -1,3 +1,10 @@
+# [2.2.0-rc.3](https://github.com/rb-mwindh/git-bundle/compare/v2.2.0-rc.2...v2.2.0-rc.3) (2026-04-16)
+
+
+### Features
+
+* **api:** delete `transportRef` after import ([3b40d2b](https://github.com/rb-mwindh/git-bundle/commit/3b40d2bf98e617784cb532e8dbca4ae6dd8357da))
+
 # [2.2.0-rc.2](https://github.com/rb-mwindh/git-bundle/compare/v2.2.0-rc.1...v2.2.0-rc.2) (2026-04-16)
 
 
