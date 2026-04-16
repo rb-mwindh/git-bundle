@@ -1,10 +1,6 @@
 import fs from 'node:fs';
 import {GithubApi} from './github-api.js';
-import {
-  DEFAULT_TRACKED_REFS,
-  type FetchRefsResult,
-  GitApi,
-} from './git-api.js';
+import {DEFAULT_TRACKED_REFS, type FetchRefsResult, GitApi,} from './git-api.js';
 import {type FetchResult} from 'simple-git';
 import {RepoSnapshot} from "./types.js";
 
@@ -14,7 +10,7 @@ export class GitBundleApi {
 
   constructor(repoPath: string, githubApi: GithubApi) {
     this.githubApi = githubApi;
-    this.gitApi = new GitApi(repoPath);
+    this.gitApi = new GitApi(repoPath, githubApi);
   }
 
   async ensureGitRepository(): Promise<void> {
@@ -69,7 +65,18 @@ export class GitBundleApi {
     const stats = fs.statSync(bundlePath, {throwIfNoEntry: false});
     this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`)
 
+    const currentHeadRef = await this.gitApi.getHeadRef();
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
+    const shouldDetach = currentHeadRef !== null && bundleRefs.includes(currentHeadRef);
+
+    if (shouldDetach) {
+      this.githubApi.info(
+        `Current HEAD is attached to "${currentHeadRef}", ` +
+        `which will be updated by bundle import. ` +
+        `Detaching HEAD temporarily...`
+      );
+      await this.gitApi.checkout('HEAD', {detach: true});
+    }
 
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
@@ -114,7 +121,7 @@ export class GitBundleApi {
         );
       }
 
-      this.githubApi.info(`Checked out transport ref "${candidate}". Repository state is now based on the imported bundle.`);
+      this.githubApi.info(`Checked out ref "${candidate}". Repository state is now based on the imported bundle.`);
       return;
     }
 
@@ -194,7 +201,7 @@ export class GitBundleApi {
       const result = await this.gitApi.createBundle(bundlePath, revisionSpecs);
       this.githubApi.debug(JSON.stringify(result));
 
-      const stat = fs.statSync(bundlePath, { throwIfNoEntry: false }) || ({ size: 0 });
+      const stat = fs.statSync(bundlePath, {throwIfNoEntry: false}) || ({size: 0});
       this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
 
       return stat.size > 0;

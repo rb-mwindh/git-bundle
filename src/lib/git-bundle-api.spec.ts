@@ -130,6 +130,36 @@ describe('GitBundleApi', () => {
       );
     });
 
+    it('detaches HEAD before import when current head ref is included in bundle refs', async () => {
+      const {api} = createHarness('refs/heads/feature-x');
+      jest.spyOn(GitApi.prototype, 'getHeadRef').mockResolvedValue('refs/heads/feature-x');
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/feature-x', 'refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(checkout).toHaveBeenNthCalledWith(1, 'HEAD', {detach: true});
+    });
+
+    it('does not detach HEAD when current head ref is not included in bundle refs', async () => {
+      const {api} = createHarness('refs/heads/feature-x');
+      jest.spyOn(GitApi.prototype, 'getHeadRef').mockResolvedValue('refs/heads/other');
+      jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/feature-x', 'refs/heads/release']);
+      jest.spyOn(GitApi.prototype, 'fetch').mockResolvedValue({raw: 'ok'} as never);
+      jest.spyOn(GitApi.prototype, 'showRef').mockResolvedValue('');
+      jest.spyOn(GitApi.prototype, 'resolveRef').mockResolvedValue('abc123');
+      const checkout = jest.spyOn(GitApi.prototype, 'checkout').mockResolvedValue(undefined as never);
+
+      await api.importBundle('/tmp/release', 'release');
+
+      expect(checkout).toHaveBeenNthCalledWith(1, 'feature-x');
+      const headCheckoutCalls = checkout.mock.calls.filter(([ref]) => ref === 'HEAD');
+      expect(headCheckoutCalls).toHaveLength(0);
+    });
+
     it('checks out contextRef branch by short name when it resolves first', async () => {
       const {api} = createHarness('refs/heads/feature-x');
       jest.spyOn(GitApi.prototype, 'listBundleRefs').mockResolvedValue(['refs/heads/release', 'refs/tags/v1']);
