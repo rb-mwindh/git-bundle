@@ -1,3 +1,11 @@
+# [2.2.0-rc.2](https://github.com/rb-mwindh/git-bundle/compare/v2.2.0-rc.1...v2.2.0-rc.2) (2026-04-16)
+
+
+### Features
+
+* **git-api:** add logger-based outputHandler integration ([9b4eb11](https://github.com/rb-mwindh/git-bundle/commit/9b4eb11e4372f5af7ad1f454e8235369df563757))
+* **git-bundle-api:** detach HEAD when importing tracked head refs ([a5c32e9](https://github.com/rb-mwindh/git-bundle/commit/a5c32e94d24690a8b23f405b9aeaa37fd54a3f7e))
+
 # [2.2.0-rc.1](https://github.com/rb-mwindh/git-bundle/compare/v2.1.0...v2.2.0-rc.1) (2026-04-15)
 
 

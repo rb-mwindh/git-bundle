@@ -1,4 +1,4 @@
-/*! @rb-mwindh/git-bundle v2.1.0 | MIT */
+/*! @rb-mwindh/git-bundle v2.2.0-rc.1 | MIT */
 
 // src/main.ts
 import * as core from "@actions/core";
@@ -41,6 +41,7 @@ import * as os from "node:os";
 import { join } from "node:path";
 import {
   debug,
+  error,
   getInput,
   getState,
   info,
@@ -74,11 +75,14 @@ var GithubApi = class {
   info(message) {
     info(message);
   }
-  notice(message, properties) {
-    notice(message, properties);
+  notice(message) {
+    notice(message);
   }
-  warning(message, properties) {
-    warning(message, properties);
+  warning(message) {
+    warning(message);
+  }
+  error(message) {
+    error(message);
   }
   getContextSha() {
     return context.sha;
@@ -110,9 +114,9 @@ var GithubApi = class {
         this.artifactCache.set(name, { path: bundlePath, artifact: compat });
         return compat;
       }
-    } catch (error) {
-      if (this.isArtifactMissingError(error, name)) return null;
-      throw error;
+    } catch (error2) {
+      if (this.isArtifactMissingError(error2, name)) return null;
+      throw error2;
     }
     return null;
   }
@@ -128,11 +132,11 @@ var GithubApi = class {
     let result;
     try {
       result = await this.artifactClient.downloadArtifact(artifact2.name, targetDir);
-    } catch (error) {
-      if (this.isArtifactMissingError(error, artifact2.name)) {
+    } catch (error2) {
+      if (this.isArtifactMissingError(error2, artifact2.name)) {
         throw new Error(`Artifact "${artifact2.name}" not found.`);
       }
-      throw error;
+      throw error2;
     }
     if (!result?.downloadPath) {
       throw new Error(`Artifact download returned no path for "${artifact2.name}".`);
@@ -156,8 +160,8 @@ var GithubApi = class {
   async deleteArtifact(_name) {
     this.debug("deleteArtifact unsupported by @actions/artifact@^1; skipping.");
   }
-  isArtifactMissingError(error, name) {
-    const msg = error instanceof Error ? error.message : String(error);
+  isArtifactMissingError(error2, name) {
+    const msg = error2 instanceof Error ? error2.message : String(error2);
     return msg.includes("Unable to find any artifacts") || msg.includes(`Unable to find an artifact with the name: ${name}`);
   }
 };
@@ -185,8 +189,15 @@ function toFetchRefSpec(ref) {
 var DEFAULT_TRACKED_REFS = ["refs/tags/*", "refs/notes/*"];
 var GitApi = class {
   git;
-  constructor(repoPathOrClient) {
+  constructor(repoPathOrClient, logger) {
     this.git = typeof repoPathOrClient === "string" ? simpleGit(repoPathOrClient) : repoPathOrClient;
+    if (logger) {
+      this.git.outputHandler((command, stdout, stderr) => {
+        logger.debug(command);
+        stdout.on("data", (data) => logger.debug(String(data)));
+        stderr.on("data", (data) => logger.debug(String(data)));
+      });
+    }
   }
   /**
    * Returns true if the working directory is inside a Git repository.
@@ -219,8 +230,16 @@ var GitApi = class {
   async fetchUnshallow(fetchRefSpecs = []) {
     return this.git.fetch(["--force", "--unshallow", "origin", ...fetchRefSpecs]);
   }
-  async checkout(sha) {
-    return this.git.checkout(["--force", sha]);
+  async checkout(sha, options) {
+    const args = [];
+    if (options?.force !== false) {
+      args.push("--force");
+    }
+    if (options?.detach === true) {
+      args.push("--detach");
+    }
+    args.push(sha);
+    await this.git.checkout(args);
   }
   /**
    * Creates a snapshot of all current refs matching the given prefixes as a flat ref→sha map.
@@ -252,6 +271,13 @@ var GitApi = class {
   async getHeadSha() {
     return (await this.git.revparse(["HEAD"])).trim();
   }
+  async getHeadRef() {
+    try {
+      return (await this.git.raw(["symbolic-ref", "--quiet", "HEAD"])).trim();
+    } catch {
+      return null;
+    }
+  }
   /**
    * Updates a Git ref to point to the given commit SHA.
    */
@@ -278,8 +304,8 @@ var GitApi = class {
     try {
       const result = await this.git.raw(["bundle", "create", bundlePath, ...revisionSpecs]);
       return { result };
-    } catch (error) {
-      return { error };
+    } catch (error2) {
+      return { error: error2 };
     }
   }
   /**
@@ -323,7 +349,7 @@ var GitBundleApi = class {
   gitApi;
   constructor(repoPath, githubApi) {
     this.githubApi = githubApi;
-    this.gitApi = new GitApi(repoPath);
+    this.gitApi = new GitApi(repoPath, githubApi);
   }
   async ensureGitRepository() {
     this.githubApi.info("Checking if current working directory is a Git repository...");
@@ -343,8 +369,8 @@ var GitBundleApi = class {
     try {
       const fetchResult = await this.gitApi.fetchUnshallow(fetchRefSpecs);
       return { wasShallow: true, fetchResult };
-    } catch (error) {
-      const unshallowError = error instanceof Error ? error.message : String(error);
+    } catch (error2) {
+      const unshallowError = error2 instanceof Error ? error2.message : String(error2);
       const fetchResult = await this.gitApi.fetch(fetchRefSpecs);
       return { wasShallow: true, unshallowError, fetchResult };
     }
@@ -366,7 +392,15 @@ var GitBundleApi = class {
     const contextRef = this.githubApi.getContextRef();
     const stats = fs.statSync(bundlePath, { throwIfNoEntry: false });
     this.githubApi.info(`Inspecting Git bundle at "${bundlePath}": isFile: ${stats?.isFile() || false}, size: ${stats?.size || 0} bytes.`);
+    const currentHeadRef = await this.gitApi.getHeadRef();
     const bundleRefs = await this.gitApi.listBundleRefs(bundlePath);
+    const shouldDetach = currentHeadRef !== null && bundleRefs.includes(currentHeadRef);
+    if (shouldDetach) {
+      this.githubApi.info(
+        `Current HEAD is attached to "${currentHeadRef}", which will be updated by bundle import. Detaching HEAD temporarily...`
+      );
+      await this.gitApi.checkout("HEAD", { detach: true });
+    }
     if (bundleRefs.length === 0) {
       this.githubApi.notice(`No valid refs found in artifact "${bundleName}". Import is skipped.`);
       return;
@@ -405,7 +439,7 @@ ${this.formatFetchResult(fetchResult)}`);
 ${String(err)}`
         );
       }
-      this.githubApi.info(`Checked out transport ref "${candidate}". Repository state is now based on the imported bundle.`);
+      this.githubApi.info(`Checked out ref "${candidate}". Repository state is now based on the imported bundle.`);
       return;
     }
     throw new Error(
@@ -432,8 +466,8 @@ ${String(err)}`
     try {
       const result = await this.gitApi.updateRef(ref, sha);
       this.githubApi.info(result);
-    } catch (error) {
-      throw new Error(`Failed to update Git ref "${ref}" to SHA ${sha}. ${String(error)}`);
+    } catch (error2) {
+      throw new Error(`Failed to update Git ref "${ref}" to SHA ${sha}. ${String(error2)}`);
     }
   }
   async getCommitCountSince(baseSha, targetRef) {
@@ -463,13 +497,13 @@ ${String(err)}`
       const stat = fs.statSync(bundlePath, { throwIfNoEntry: false }) || { size: 0 };
       this.githubApi.info(`Git bundle size: ${stat.size} bytes`);
       return stat.size > 0;
-    } catch (error) {
-      this.githubApi.debug(String(error));
-      const message = error instanceof Error ? error.message : String(error);
+    } catch (error2) {
+      this.githubApi.debug(String(error2));
+      const message = error2 instanceof Error ? error2.message : String(error2);
       if (message.includes("Refusing to create empty bundle") || message.includes("no new commits") || message.includes("no new revisions")) {
         return false;
       }
-      throw error;
+      throw error2;
     }
   }
   saveSnapshot(snapshot) {
@@ -573,8 +607,8 @@ var GitBundleAction = class {
     }
     try {
       await this.githubApi.deleteArtifact(bundleName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : String(error2);
       if (!message.toLowerCase().includes("not found")) {
         this.githubApi.warning(
           `Upload step: failed to delete existing artifact "${bundleName}": ${message}`
@@ -607,7 +641,7 @@ var GitBundleAction = class {
 };
 
 // src/main.ts
-new GitBundleAction().main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
+new GitBundleAction().main().catch((error2) => {
+  const message = error2 instanceof Error ? error2.message : String(error2);
   core.setFailed(message);
 });
