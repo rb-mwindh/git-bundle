@@ -203,15 +203,22 @@ export class GitApi {
       });
   }
 
-  /**
-   * Resolves a ref to its commit SHA, returning null if the ref cannot be resolved.
-   */
-  async resolveRef(ref: string): Promise<string | null> {
-    try {
-      return (await this.git.revparse(['--verify', ref])).trim();
-    } catch {
-      return null;
-    }
-  }
+   /**
+    * Resolves a ref to its commit SHA, returning null if the ref cannot be resolved.
+    */
+   async resolveRef(ref: string): Promise<string | null> {
+     try {
+       return (await this.git.revparse(['--verify', ref])).trim();
+     } catch {
+       return null;
+     }
+   }
+
+   /**
+    * Deletes a Git ref.
+    */
+   async deleteRef(ref: string): Promise<void> {
+     await this.git.raw(['update-ref', '-d', ref]);
+   }
 }
 
